@@ -1,0 +1,11 @@
+{
+  "model_id": "stabilityai/stable-diffusion-xl-base-1.0",
+  "refiner_id": "stabilityai/stable-diffusion-xl-refiner-1.0",
+  "enable_refiner": true,
+  "num_inference_steps": 80,
+  "guidance_scale": 8.5,
+  "width": 1024,
+  "height": 1024,
+  "memory_efficient": true,
+  "cuda_memory_fraction": 0.8
+}

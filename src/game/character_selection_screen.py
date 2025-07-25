@@ -1,0 +1,641 @@
+"""
+Character Selection Screen for Medieval Deck.
+
+Tela única de personagem detalhado com navegação por setas e fundos gerados por IA.
+"""
+
+import pygame
+import math
+import logging
+from typing import Optional, List, Tuple, Dict, Any
+from pathlib import Path
+from PIL import Image, ImageFilter
+
+from ..utils.config import Config
+
+# Import AssetGenerator opcionalmente para evitar dependências problemáticas
+try:
+    from ..generators.asset_generator import AssetGenerator
+except ImportError:
+    AssetGenerator = None
+
+logger = logging.getLogger(__name__)
+
+
+class CharacterSelectionScreen:
+    """
+    Tela de seleção com personagem único detalhado e navegação por setas.
+    
+    Features:
+    - Navegação por setas entre personagens
+    - Fundo gerado por IA específico para cada personagem
+    - Informações detalhadas (imagem, história, atributos)
+    - Animações suaves de transição
+    - Resolução ultrawide (3440x1440)
+    """
+    
+    def __init__(self, 
+                 screen: pygame.Surface, 
+                 config: Config,
+                 asset_generator: Optional[Any] = None):
+        """
+        Inicializa a tela de seleção de personagens.
+        
+        Args:
+            screen: Surface principal do Pygame
+            config: Configurações do jogo
+            asset_generator: Gerador de assets IA (opcional)
+        """
+        self.screen = screen
+        self.config = config
+        self.asset_generator = asset_generator if AssetGenerator else None
+        
+        # Dimensões da tela ultrawide
+        self.width = 3440
+        self.height = 1440
+        
+        # Dados dos personagens
+        self.characters = [
+            {
+                "id": "knight",
+                "name": "Cavaleiro Valente",
+                "title": "Defensor do Reino",
+                "attributes": {
+                    "Vida": 30,
+                    "Ataque": 8,
+                    "Defesa": 12,
+                    "Magia": 3,
+                    "Velocidade": 6
+                },
+                "abilities": ["Muralha de Escudos", "Ataque Carregado", "Provocar"],
+                "story": "Um bravo cavaleiro em armadura reluzente, defensor do reino. Nascido na nobreza, dedicou sua vida a proteger os inocentes e manter a paz nas terras medievais. Sua honra é inabalável e sua coragem lendária entre os súditos do reino.",
+                "prompt": "epic medieval knight in golden armor, cathedral courtyard at sunset, dramatic cinematic lighting, castle banners flying, masterpiece, high quality, detailed",
+                "theme_colors": {
+                    "primary": (255, 215, 0),      # Dourado
+                    "secondary": (184, 134, 11),   # Dourado escuro
+                    "accent": (255, 255, 255),     # Branco
+                    "background": (40, 35, 25),    # Marrom escuro
+                    "text": (255, 255, 255)       # Branco
+                }
+            },
+            {
+                "id": "wizard",
+                "name": "Mestre Arcano",
+                "title": "Guardião dos Segredos",
+                "attributes": {
+                    "Vida": 20,
+                    "Ataque": 5,
+                    "Defesa": 6,
+                    "Magia": 15,
+                    "Velocidade": 8
+                },
+                "abilities": ["Bola de Fogo", "Escudo de Gelo", "Teletransporte"],
+                "story": "Um poderoso mago que domina as artes místicas e conhecimentos proibidos. Estudioso incansável dos segredos do universo, ele manipula as forças elementais com maestria incomparável. Sua torre se ergue solitária, repleta de tomos antigos e artefatos mágicos.",
+                "prompt": "arcane mage in dark blue robes, ancient library with glowing runes, floating magic particles, mystical atmosphere, purple and blue lighting, masterpiece, high quality, detailed",
+                "theme_colors": {
+                    "primary": (138, 43, 226),     # Roxo
+                    "secondary": (75, 0, 130),     # Índigo
+                    "accent": (186, 85, 211),      # Orchid
+                    "background": (25, 25, 40),    # Azul escuro
+                    "text": (255, 255, 255)       # Branco
+                }
+            },
+            {
+                "id": "assassin",
+                "name": "Assassino das Sombras",
+                "title": "Lâmina Silenciosa",
+                "attributes": {
+                    "Vida": 25,
+                    "Ataque": 12,
+                    "Defesa": 7,
+                    "Magia": 6,
+                    "Velocidade": 14
+                },
+                "abilities": ["Furtividade", "Lâmina Envenenada", "Ataque Crítico"],
+                "story": "Um assassino mortal que ataca das sombras com precisão letal. Mestre da furtividade e venenos, ele se move como fantasma pelas ruas escuras, executando sua justiça silenciosa. Ninguém conhece seu verdadeiro rosto, apenas o medo que sua presença inspira.",
+                "prompt": "dark rogue assassin in hood, purple misty fog, medieval stone alley at night, moonlight shadows, mysterious atmosphere, masterpiece, high quality, detailed",
+                "theme_colors": {
+                    "primary": (50, 205, 50),      # Verde lima
+                    "secondary": (34, 139, 34),    # Verde floresta
+                    "accent": (144, 238, 144),     # Verde claro
+                    "background": (15, 15, 15),    # Preto
+                    "text": (255, 255, 255)       # Branco
+                }
+            }
+        ]
+        
+        # Estado atual
+        self.current_character_index = 0
+        self.current_character = self.characters[0]
+        
+        # Estado de transição
+        self.transitioning = False
+        self.transition_alpha = 255
+        self.transition_direction = 0  # -1 para esquerda, 1 para direita
+        self.transition_speed = 400.0  # alpha por segundo
+        
+        # Animação
+        self.animation_time = 0
+        
+        # Assets carregados
+        self.character_backgrounds = {}
+        self.character_portraits = {}
+        
+        # Inicializar fontes para ultrawide
+        self._setup_fonts()
+        
+        # Configurar layout
+        self._setup_layout()
+        
+        # Configurar botões
+        self._setup_buttons()
+        
+        # Carregar assets iniciais
+        self._load_initial_assets()
+        
+        logger.info("Character selection screen initialized with navigation")
+    
+    def _setup_fonts(self):
+        """Configura as fontes para resolução ultrawide."""
+        try:
+            # Fontes maiores para ultrawide
+            self.title_font = pygame.font.Font(None, 96)      # Nome do personagem
+            self.subtitle_font = pygame.font.Font(None, 64)   # Título do personagem
+            self.header_font = pygame.font.Font(None, 56)     # Seções
+            self.text_font = pygame.font.Font(None, 42)       # Texto geral
+            self.stat_font = pygame.font.Font(None, 48)       # Estatísticas
+            self.button_font = pygame.font.Font(None, 64)     # Botões
+            self.arrow_font = pygame.font.Font(None, 120)     # Setas de navegação
+        except:
+            # Fallback para fonte padrão
+            self.title_font = pygame.font.Font(None, 96)
+            self.subtitle_font = pygame.font.Font(None, 64)
+            self.header_font = pygame.font.Font(None, 56)
+            self.text_font = pygame.font.Font(None, 42)
+            self.stat_font = pygame.font.Font(None, 48)
+            self.button_font = pygame.font.Font(None, 64)
+            self.arrow_font = pygame.font.Font(None, 120)
+    
+    def _setup_layout(self):
+        """Configura o layout para ultrawide."""
+        # Área da imagem do personagem (lado esquerdo)
+        self.portrait_area = pygame.Rect(200, 200, 800, 1000)
+        
+        # Área do painel de informações (lado direito)
+        self.info_panel_area = pygame.Rect(1200, 150, 2000, 1100)
+        
+        # Área das setas de navegação
+        self.left_arrow_area = pygame.Rect(50, 650, 100, 140)
+        self.right_arrow_area = pygame.Rect(3290, 650, 100, 140)
+    
+    def _setup_buttons(self):
+        """Configura os botões da tela."""
+        # Botão "Selecionar Personagem"
+        self.select_button = {
+            'rect': pygame.Rect(2750, 1250, 400, 100),
+            'text': 'Selecionar',
+            'hovered': False,
+            'action': 'select_character'
+        }
+        
+        # Botão "Voltar"
+        self.back_button = {
+            'rect': pygame.Rect(100, 1250, 300, 100),
+            'text': 'Voltar',
+            'hovered': False,
+            'action': 'back_to_menu'
+        }
+        
+        # Estado de hover das setas
+        self.left_arrow_hovered = False
+        self.right_arrow_hovered = False
+    
+    def _load_initial_assets(self):
+        """Carrega assets iniciais (fundo e retrato do personagem atual)."""
+        self._load_character_assets(self.current_character)
+    
+    def _load_character_assets(self, character: Dict[str, Any]):
+        """
+        Carrega ou gera assets para um personagem específico.
+        
+        Args:
+            character: Dados do personagem
+        """
+        character_id = character["id"]
+        
+        # Carregar fundo já gerado
+        if character_id not in self.character_backgrounds:
+            bg_path = self.config.assets_generated_dir / f"{character_id}_bg.png"
+            
+            if bg_path.exists():
+                try:
+                    # Carregar imagem gerada
+                    bg_surface = pygame.image.load(str(bg_path)).convert()
+                    
+                    # Redimensionar para resolução ultrawide se necessário
+                    if bg_surface.get_size() != (3440, 1440):
+                        bg_surface = pygame.transform.scale(bg_surface, (3440, 1440))
+                    
+                    # Aplicar escurecimento
+                    overlay = pygame.Surface((3440, 1440))
+                    overlay.set_alpha(100)  # 40% de transparência para escurecer
+                    overlay.fill((0, 0, 0))
+                    
+                    bg_surface.blit(overlay, (0, 0))
+                    
+                    self.character_backgrounds[character_id] = bg_surface
+                    logger.info(f"Fundo carregado para {character['name']}: {bg_path}")
+                    
+                except Exception as e:
+                    logger.warning(f"Falha ao carregar fundo para {character['name']}: {e}")
+            else:
+                logger.info(f"Fundo não encontrado para {character['name']}: {bg_path}")
+        
+        # Fallback: criar fundo gradiente se não encontrou a imagem
+        if character_id not in self.character_backgrounds:
+            self.character_backgrounds[character_id] = self._create_gradient_background(character)
+        
+        # Carregar retrato ou criar placeholder
+        if character_id not in self.character_portraits:
+            # Por enquanto usar placeholder até termos retratos gerados
+            self.character_portraits[character_id] = self._create_character_placeholder(character)
+    
+    def _create_gradient_background(self, character: Dict[str, Any]) -> pygame.Surface:
+        """Cria um fundo com gradiente temático como fallback."""
+        surface = pygame.Surface((self.width, self.height))
+        
+        primary = character["theme_colors"]["primary"]
+        background = character["theme_colors"]["background"]
+        
+        # Criar gradiente diagonal
+        for y in range(self.height):
+            for x in range(self.width):
+                ratio_x = x / self.width
+                ratio_y = y / self.height
+                ratio = (ratio_x + ratio_y) / 2
+                
+                color = [
+                    int(background[i] + (primary[i] - background[i]) * ratio * 0.2)
+                    for i in range(3)
+                ]
+                surface.set_at((x, y), color)
+        
+        return surface.convert()
+    
+    def _create_character_placeholder(self, character: Dict[str, Any]) -> pygame.Surface:
+        """Cria um placeholder para o retrato do personagem."""
+        surface = pygame.Surface((800, 1000), pygame.SRCALPHA)
+        
+        primary_color = character["theme_colors"]["primary"]
+        
+        # Desenhar silhueta simples baseada no tipo
+        if character["id"] == "knight":
+            # Cavaleiro: escudo e espada
+            pygame.draw.ellipse(surface, primary_color, (300, 100, 200, 250))  # Cabeça
+            pygame.draw.rect(surface, primary_color, (250, 350, 300, 500))    # Corpo
+            pygame.draw.ellipse(surface, primary_color, (150, 400, 100, 200)) # Escudo
+            
+        elif character["id"] == "wizard":
+            # Mago: chapéu pontudo
+            pygame.draw.ellipse(surface, primary_color, (300, 150, 200, 250))  # Cabeça
+            pygame.draw.polygon(surface, primary_color, [(350, 150), (450, 150), (400, 50)]) # Chapéu
+            pygame.draw.rect(surface, primary_color, (250, 400, 300, 500))    # Robes
+            
+        elif character["id"] == "assassin":
+            # Assassino: capuz
+            pygame.draw.ellipse(surface, primary_color, (300, 150, 200, 250))  # Cabeça
+            pygame.draw.ellipse(surface, primary_color, (250, 100, 300, 300))  # Capuz
+            pygame.draw.rect(surface, primary_color, (270, 400, 260, 500))    # Corpo magro
+        
+        return surface
+    
+    def _navigate_character(self, direction: int):
+        """
+        Navega para o próximo/anterior personagem.
+        
+        Args:
+            direction: -1 para anterior, 1 para próximo
+        """
+        if self.transitioning:
+            return
+        
+        # Calcular novo índice
+        new_index = (self.current_character_index + direction) % len(self.characters)
+        
+        if new_index != self.current_character_index:
+            # Iniciar transição
+            self.transitioning = True
+            self.transition_direction = direction
+            self.transition_alpha = 255
+            
+            # Atualizar personagem atual
+            self.current_character_index = new_index
+            self.current_character = self.characters[new_index]
+            
+            # Carregar assets do novo personagem
+            self._load_character_assets(self.current_character)
+            
+            logger.info(f"Navegando para: {self.current_character['name']}")
+    
+    def handle_event(self, event: pygame.event.Event) -> Optional[str]:
+        """
+        Processa eventos da tela.
+        
+        Args:
+            event: Evento do Pygame
+            
+        Returns:
+            Ação a ser executada ou None
+        """
+        if event.type == pygame.MOUSEMOTION:
+            mouse_pos = event.pos
+            
+            # Verificar hover nos botões
+            self.select_button['hovered'] = self.select_button['rect'].collidepoint(mouse_pos)
+            self.back_button['hovered'] = self.back_button['rect'].collidepoint(mouse_pos)
+            
+            # Verificar hover nas setas
+            self.left_arrow_hovered = self.left_arrow_area.collidepoint(mouse_pos)
+            self.right_arrow_hovered = self.right_arrow_area.collidepoint(mouse_pos)
+            
+        elif event.type == pygame.MOUSEBUTTONDOWN:
+            if event.button == 1:  # Clique esquerdo
+                mouse_pos = event.pos
+                
+                # Cliques nos botões
+                if self.select_button['rect'].collidepoint(mouse_pos):
+                    return self.select_button['action']
+                elif self.back_button['rect'].collidepoint(mouse_pos):
+                    return self.back_button['action']
+                
+                # Cliques nas setas
+                elif self.left_arrow_area.collidepoint(mouse_pos):
+                    self._navigate_character(-1)
+                elif self.right_arrow_area.collidepoint(mouse_pos):
+                    self._navigate_character(1)
+        
+        elif event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_LEFT or event.key == pygame.K_a:
+                self._navigate_character(-1)
+            elif event.key == pygame.K_RIGHT or event.key == pygame.K_d:
+                self._navigate_character(1)
+            elif event.key == pygame.K_ESCAPE:
+                return 'back_to_menu'
+            elif event.key == pygame.K_RETURN or event.key == pygame.K_SPACE:
+                return 'select_character'
+        
+        return None
+    
+    def update(self, dt: float):
+        """
+        Atualiza a lógica da tela.
+        
+        Args:
+            dt: Delta time em segundos
+        """
+        self.animation_time += dt
+        
+        # Atualizar transição
+        if self.transitioning:
+            self.transition_alpha -= self.transition_speed * dt
+            
+            if self.transition_alpha <= 0:
+                self.transition_alpha = 0
+                self.transitioning = False
+    
+    def get_selected_character(self) -> Optional[str]:
+        """Retorna o tipo do personagem selecionado."""
+        return self.current_character["id"]
+    
+    def draw(self) -> None:
+        """Desenha a tela de seleção de personagens."""
+        # Desenhar fundo do personagem atual
+        current_bg = self.character_backgrounds.get(self.current_character["id"])
+        if current_bg:
+            self.screen.blit(current_bg, (0, 0))
+        else:
+            self.screen.fill(self.current_character["theme_colors"]["background"])
+        
+        # Desenhar retrato do personagem
+        self._draw_character_portrait()
+        
+        # Desenhar painel de informações
+        self._draw_info_panel()
+        
+        # Desenhar setas de navegação
+        self._draw_navigation_arrows()
+        
+        # Desenhar botões
+        self._draw_buttons()
+        
+        # Aplicar efeito de transição se necessário
+        if self.transitioning and self.transition_alpha > 0:
+            fade_overlay = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
+            fade_overlay.fill((0, 0, 0, int(self.transition_alpha)))
+            self.screen.blit(fade_overlay, (0, 0))
+    
+    def _draw_character_portrait(self):
+        """Desenha o retrato do personagem."""
+        character_id = self.current_character["id"]
+        portrait = self.character_portraits.get(character_id)
+        
+        if portrait:
+            # Efeito de brilho pulsante
+            glow_intensity = int(30 + 20 * math.sin(self.animation_time * 2))
+            primary_color = self.current_character["theme_colors"]["primary"]
+            
+            # Criar surface de brilho
+            glow_surface = pygame.Surface((
+                portrait.get_width() + 40,
+                portrait.get_height() + 40
+            ), pygame.SRCALPHA)
+            
+            pygame.draw.rect(glow_surface, 
+                           (*primary_color, glow_intensity),
+                           glow_surface.get_rect())
+            
+            # Desenhar brilho e retrato
+            glow_rect = glow_surface.get_rect(center=self.portrait_area.center)
+            portrait_rect = portrait.get_rect(center=self.portrait_area.center)
+            
+            self.screen.blit(glow_surface, glow_rect)
+            self.screen.blit(portrait, portrait_rect)
+    
+    def _draw_info_panel(self):
+        """Desenha o painel de informações do personagem."""
+        char = self.current_character
+        colors = char["theme_colors"]
+        
+        # Fundo do painel com transparência
+        panel_surface = pygame.Surface((self.info_panel_area.width, self.info_panel_area.height), pygame.SRCALPHA)
+        panel_surface.fill((*colors["background"], 200))
+        
+        # Borda do painel
+        pygame.draw.rect(panel_surface, colors["primary"], 
+                        (0, 0, self.info_panel_area.width, self.info_panel_area.height), 4)
+        
+        self.screen.blit(panel_surface, self.info_panel_area)
+        
+        # Conteúdo do painel
+        y_offset = 50
+        x_base = self.info_panel_area.x + 50
+        
+        # Nome do personagem
+        name_text = self.title_font.render(char["name"], True, colors["accent"])
+        self.screen.blit(name_text, (x_base, self.info_panel_area.y + y_offset))
+        y_offset += 100
+        
+        # Título do personagem
+        title_text = self.subtitle_font.render(char["title"], True, colors["primary"])
+        self.screen.blit(title_text, (x_base, self.info_panel_area.y + y_offset))
+        y_offset += 80
+        
+        # História
+        story_header = self.header_font.render("História", True, colors["primary"])
+        self.screen.blit(story_header, (x_base, self.info_panel_area.y + y_offset))
+        y_offset += 60
+        
+        # Quebrar texto da história
+        story_lines = self._wrap_text(char["story"], self.info_panel_area.width - 100)
+        for line in story_lines[:6]:  # Limitar a 6 linhas
+            line_text = self.text_font.render(line, True, colors["text"])
+            self.screen.blit(line_text, (x_base, self.info_panel_area.y + y_offset))
+            y_offset += 45
+        
+        y_offset += 40
+        
+        # Atributos
+        attrs_header = self.header_font.render("Atributos", True, colors["primary"])
+        self.screen.blit(attrs_header, (x_base, self.info_panel_area.y + y_offset))
+        y_offset += 60
+        
+        for attr_name, attr_value in char["attributes"].items():
+            # Nome do atributo
+            attr_text = self.stat_font.render(f"{attr_name}:", True, colors["text"])
+            self.screen.blit(attr_text, (x_base, self.info_panel_area.y + y_offset))
+            
+            # Valor do atributo
+            value_text = self.stat_font.render(str(attr_value), True, colors["accent"])
+            self.screen.blit(value_text, (x_base + 200, self.info_panel_area.y + y_offset))
+            
+            # Barra de progresso
+            bar_x = x_base + 300
+            bar_y = self.info_panel_area.y + y_offset + 10
+            bar_width = 400
+            bar_height = 25
+            
+            # Fundo da barra
+            pygame.draw.rect(self.screen, (50, 50, 50), 
+                           (bar_x, bar_y, bar_width, bar_height))
+            
+            # Preenchimento da barra (assumindo max 30)
+            fill_width = int((attr_value / 30.0) * bar_width)
+            bar_color = self._get_stat_color(attr_name)
+            pygame.draw.rect(self.screen, bar_color,
+                           (bar_x, bar_y, fill_width, bar_height))
+            
+            # Borda da barra
+            pygame.draw.rect(self.screen, colors["text"],
+                           (bar_x, bar_y, bar_width, bar_height), 2)
+            
+            y_offset += 55
+        
+        y_offset += 30
+        
+        # Habilidades
+        abilities_header = self.header_font.render("Habilidades", True, colors["primary"])
+        self.screen.blit(abilities_header, (x_base, self.info_panel_area.y + y_offset))
+        y_offset += 60
+        
+        for ability in char["abilities"]:
+            ability_text = self.text_font.render(f"• {ability}", True, colors["text"])
+            self.screen.blit(ability_text, (x_base, self.info_panel_area.y + y_offset))
+            y_offset += 45
+    
+    def _draw_navigation_arrows(self):
+        """Desenha as setas de navegação."""
+        colors = self.current_character["theme_colors"]
+        
+        # Seta esquerda
+        left_color = colors["accent"] if self.left_arrow_hovered else colors["primary"]
+        left_arrow = self.arrow_font.render("◀", True, left_color)
+        left_rect = left_arrow.get_rect(center=self.left_arrow_area.center)
+        self.screen.blit(left_arrow, left_rect)
+        
+        # Seta direita
+        right_color = colors["accent"] if self.right_arrow_hovered else colors["primary"]
+        right_arrow = self.arrow_font.render("▶", True, right_color)
+        right_rect = right_arrow.get_rect(center=self.right_arrow_area.center)
+        self.screen.blit(right_arrow, right_rect)
+        
+        # Indicador de posição (pontos)
+        indicator_y = self.height - 100
+        indicator_spacing = 40
+        total_width = len(self.characters) * indicator_spacing
+        start_x = (self.width - total_width) // 2
+        
+        for i, _ in enumerate(self.characters):
+            color = colors["accent"] if i == self.current_character_index else colors["secondary"]
+            center = (start_x + i * indicator_spacing, indicator_y)
+            pygame.draw.circle(self.screen, color, center, 12)
+    
+    def _draw_buttons(self):
+        """Desenha os botões da tela."""
+        colors = self.current_character["theme_colors"]
+        buttons = [self.select_button, self.back_button]
+        
+        for button in buttons:
+            # Cor do botão baseada no hover
+            if button['hovered']:
+                button_color = colors["primary"]
+                text_color = colors["background"]
+                border_width = 6
+            else:
+                button_color = colors["background"]
+                text_color = colors["text"]
+                border_width = 3
+            
+            # Desenhar fundo do botão
+            pygame.draw.rect(self.screen, button_color, button['rect'])
+            
+            # Desenhar borda
+            pygame.draw.rect(self.screen, colors["primary"], 
+                           button['rect'], border_width)
+            
+            # Desenhar texto
+            text = self.button_font.render(button['text'], True, text_color)
+            text_rect = text.get_rect(center=button['rect'].center)
+            self.screen.blit(text, text_rect)
+    
+    def _wrap_text(self, text: str, max_width: int) -> list:
+        """Quebra texto para caber na largura especificada."""
+        words = text.split(' ')
+        lines = []
+        current_line = ""
+        
+        for word in words:
+            test_line = current_line + " " + word if current_line else word
+            test_surface = self.text_font.render(test_line, True, (255, 255, 255))
+            
+            if test_surface.get_width() <= max_width:
+                current_line = test_line
+            else:
+                if current_line:
+                    lines.append(current_line)
+                current_line = word
+        
+        if current_line:
+            lines.append(current_line)
+        
+        return lines
+    
+    def _get_stat_color(self, stat_name: str) -> Tuple[int, int, int]:
+        """Retorna cor da barra baseada no tipo de atributo."""
+        colors = {
+            "Vida": (220, 60, 60),       # Vermelho
+            "Ataque": (220, 120, 60),    # Laranja  
+            "Defesa": (60, 120, 220),    # Azul
+            "Magia": (160, 60, 220),     # Roxo
+            "Velocidade": (60, 220, 120), # Verde
+        }
+        return colors.get(stat_name, self.current_character["theme_colors"]["primary"])

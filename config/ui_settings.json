@@ -1,0 +1,13 @@
+{
+  "window_width": 3440,
+  "window_height": 1440,
+  "fullscreen": false,
+  "fps": 60,
+  "card_width": 150,
+  "card_height": 210,
+  "card_hover_scale": 1.1,
+  "animation_speed": 1.0,
+  "character_screen_fade_duration": 0.5,
+  "character_panel_width": 600,
+  "character_panel_alpha": 200
+}

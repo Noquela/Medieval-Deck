@@ -1,0 +1,129 @@
+{
+  "quality_prompts": {
+    "high_quality": [
+      "masterpiece",
+      "best quality", 
+      "ultra detailed",
+      "sharp focus",
+      "professional artwork",
+      "8k resolution"
+    ],
+    "style_prompts": [
+      "medieval fantasy",
+      "dark fantasy", 
+      "gothic art",
+      "renaissance painting",
+      "concept art",
+      "oil painting"
+    ],
+    "lighting_prompts": [
+      "dramatic lighting",
+      "atmospheric lighting",
+      "moody lighting",
+      "golden hour",
+      "candlelight",
+      "moonlight",
+      "torch light"
+    ]
+  },
+  
+  "themed_prompts": {
+    "creature": [
+      "ancient beast",
+      "mythical creature", 
+      "legendary monster",
+      "fearsome warrior",
+      "noble knight",
+      "mystical being"
+    ],
+    "spell": [
+      "magical energy",
+      "arcane power",
+      "spell circle",
+      "mystical runes",
+      "enchantment aura",
+      "sorcerous flames"
+    ],
+    "artifact": [
+      "ancient relic",
+      "magical item",
+      "ornate weapon",
+      "golden chalice",
+      "jeweled crown",
+      "sacred treasure"
+    ],
+    "land": [
+      "medieval landscape",
+      "ancient kingdom",
+      "mystical realm",
+      "enchanted forest",
+      "towering castle",
+      "sacred grounds"
+    ]
+  },
+  
+  "negative_prompts": {
+    "quality": [
+      "blurry",
+      "low quality",
+      "pixelated",
+      "poorly drawn",
+      "bad anatomy",
+      "distorted"
+    ],
+    "style": [
+      "cartoon",
+      "anime",
+      "modern",
+      "contemporary", 
+      "futuristic",
+      "sci-fi"
+    ],
+    "artifacts": [
+      "text",
+      "watermark",
+      "signature",
+      "logo",
+      "borders"
+    ]
+  },
+  
+  "enhancement_prompts": {
+    "atmosphere": [
+      "epic atmosphere",
+      "dramatic mood",
+      "mystical ambiance",
+      "ancient power",
+      "magical aura"
+    ],
+    "details": [
+      "intricate details",
+      "ornate decorations",
+      "rich textures",
+      "weathered surfaces",
+      "aged materials"
+    ]
+  },
+  
+  "generation_settings": {
+    "default_params": {
+      "num_inference_steps": 80,
+      "guidance_scale": 8.5,
+      "width": 1024,
+      "height": 1024,
+      "scheduler": "DPMSolverMultistepScheduler"
+    },
+    "quality_params": {
+      "num_inference_steps": 100,
+      "guidance_scale": 9.0,
+      "width": 1024,
+      "height": 1024
+    },
+    "fast_params": {
+      "num_inference_steps": 50,
+      "guidance_scale": 7.5,
+      "width": 1024,
+      "height": 1024
+    }
+  }
+}

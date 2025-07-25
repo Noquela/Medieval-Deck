@@ -1,0 +1,154 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environment
+venv/
+env/
+ENV/
+venv.bak/
+env.bak/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Logs
+*.log
+logs/
+medieval_deck.log
+
+# AI Models and Cache
+assets/cache/
+*.safetensors
+*.bin
+*.ckpt
+models/
+
+# Generated Assets
+assets/generated/*.png
+assets/generated/*.jpg
+assets/generated/*.jpeg
+
+# Temporary files
+*.tmp
+*.temp
+temp/
+tmp/
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Game saves and user data
+saves/
+profiles/
+user_data/
+
+# PyTorch
+*.pth
+*.pt
+
+# Hugging Face
+.cache/
+transformers_cache/
+
+# CUDA
+*.cu
+*.cuh
+
+# Performance profiling
+*.prof
+*.profile
+
+# Test coverage
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Configuration backups
+*.bak
+config/*.bak
+
+# Asset generation temporary files
+assets/temp/
+*.processing
+
+# Large files
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.zip
+*.tar.gz
+*.rar
+
+# Windows
+desktop.ini
+$RECYCLE.BIN/
+
+# Mac
+.AppleDouble
+.LSOverride
+Icon
+
+# Linux
+*~
+.nfs*
+
+# Audio files (except small samples)
+*.wav
+*.mp3
+*.ogg
+*.flac
+
+# Backup files
+*backup*
+*Backup*
+*BACKUP*

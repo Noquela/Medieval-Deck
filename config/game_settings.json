@@ -1,0 +1,8 @@
+{
+  "max_deck_size": 60,
+  "min_deck_size": 40,
+  "starting_health": 30,
+  "max_mana": 10,
+  "hand_size": 7,
+  "max_players": 2
+}

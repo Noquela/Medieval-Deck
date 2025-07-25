@@ -1,0 +1,113 @@
+{
+  "cards": [
+    {
+      "id": "knight_01",
+      "name": "Valiant Knight",
+      "type": "creature",
+      "cost": 3,
+      "attack": 3,
+      "defense": 4,
+      "description": "A brave knight in shining armor, defender of the realm.",
+      "flavor_text": "Honor guides his blade, courage strengthens his heart.",
+      "rarity": "common",
+      "background_prompt": "medieval knight in shining armor, castle courtyard, banners flying",
+      "abilities": ["First Strike"]
+    },
+    {
+      "id": "dragon_01",
+      "name": "Ancient Fire Dragon",
+      "type": "creature",
+      "cost": 8,
+      "attack": 8,
+      "defense": 8,
+      "description": "An ancient dragon that commands the power of flame.",
+      "flavor_text": "Where it flies, kingdoms burn and legends are born.",
+      "rarity": "legendary",
+      "background_prompt": "massive red dragon breathing fire, dark mountain lair, treasure hoard",
+      "abilities": ["Flying", "Fire Breath"]
+    },
+    {
+      "id": "fireball_01",
+      "name": "Fireball",
+      "type": "spell",
+      "cost": 3,
+      "attack": 0,
+      "defense": 0,
+      "description": "Deal 4 damage to target creature or player.",
+      "flavor_text": "A simple spell, but devastatingly effective.",
+      "rarity": "common",
+      "background_prompt": "blazing fireball spell, wizard casting magic, arcane energy",
+      "abilities": ["Instant"]
+    },
+    {
+      "id": "excalibur_01",
+      "name": "Excalibur",
+      "type": "artifact",
+      "cost": 5,
+      "attack": 0,
+      "defense": 0,
+      "description": "Legendary sword that grants +3/+3 to equipped creature.",
+      "flavor_text": "Only the worthy may wield the blade of kings.",
+      "rarity": "legendary",
+      "background_prompt": "legendary glowing sword embedded in stone, mystical aura, royal chamber",
+      "abilities": ["Equipment", "Legendary"]
+    },
+    {
+      "id": "forest_01",
+      "name": "Enchanted Forest",
+      "type": "land",
+      "cost": 0,
+      "attack": 0,
+      "defense": 0,
+      "description": "Produces 1 Green mana. Creatures you control gain +1/+1.",
+      "flavor_text": "Magic flows through every leaf and branch.",
+      "rarity": "uncommon",
+      "background_prompt": "mystical forest with glowing trees, magical creatures, fairy lights",
+      "abilities": ["Mana Source"]
+    },
+    {
+      "id": "wizard_01",
+      "name": "Court Wizard",
+      "type": "creature",
+      "cost": 4,
+      "attack": 2,
+      "defense": 3,
+      "description": "When played, draw a card.",
+      "flavor_text": "Knowledge is the greatest weapon of all.",
+      "rarity": "uncommon",
+      "background_prompt": "wise wizard in robes, magical library, floating books and scrolls",
+      "abilities": ["Card Draw"]
+    },
+    {
+      "id": "castle_01",
+      "name": "Royal Castle",
+      "type": "land",
+      "cost": 0,
+      "attack": 0,
+      "defense": 0,
+      "description": "Produces 2 colorless mana. All your creatures gain +1 defense.",
+      "flavor_text": "Stronghold of the realm, beacon of hope.",
+      "rarity": "rare",
+      "background_prompt": "majestic medieval castle, towering walls, royal banners",
+      "abilities": ["Mana Source", "Defense Boost"]
+    },
+    {
+      "id": "assassin_01",
+      "name": "Shadow Assassin",
+      "type": "creature",
+      "cost": 2,
+      "attack": 3,
+      "defense": 1,
+      "description": "Can attack without being blocked.",
+      "flavor_text": "Strikes from the shadows, gone before the blade falls.",
+      "rarity": "uncommon",
+      "background_prompt": "cloaked assassin in shadows, dark alley, moonlight",
+      "abilities": ["Unblockable", "Stealth"]
+    }
+  ],
+  "metadata": {
+    "version": "1.0",
+    "created": "2024-01-01",
+    "description": "Medieval Deck card collection with AI-generated backgrounds"
+  }
+}

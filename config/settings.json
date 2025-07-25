@@ -1,0 +1,101 @@
+{
+  "game": {
+    "name": "Medieval Deck",
+    "version": "1.0.0",
+    "max_players": 2,
+    "starting_health": 30,
+    "starting_mana": 0,
+    "max_mana": 10,
+    "starting_hand_size": 7,
+    "max_hand_size": 10,
+    "deck_size_min": 40,
+    "deck_size_max": 60,
+    "turn_time_limit": 120
+  },
+  
+  "ui": {
+    "window": {
+      "width": 1280,
+      "height": 720,
+      "fullscreen": false,
+      "resizable": true,
+      "fps": 60
+    },
+    "theme": {
+      "background_color": [20, 20, 30],
+      "primary_color": [200, 150, 50],
+      "secondary_color": [150, 100, 50],
+      "text_color": [255, 255, 255],
+      "accent_color": [255, 215, 0]
+    },
+    "cards": {
+      "width": 150,
+      "height": 210,
+      "spacing": 10,
+      "hover_scale": 1.1,
+      "animation_speed": 0.3
+    },
+    "fonts": {
+      "title": "Arial",
+      "body": "Arial",
+      "monospace": "Courier New"
+    }
+  },
+  
+  "ai": {
+    "enabled": true,
+    "model_id": "stabilityai/stable-diffusion-xl-base-1.0",
+    "refiner_id": "stabilityai/stable-diffusion-xl-refiner-1.0",
+    "use_refiner": true,
+    "memory_efficient": true,
+    "cuda_memory_fraction": 0.8,
+    "generation": {
+      "num_inference_steps": 80,
+      "guidance_scale": 8.5,
+      "width": 1024,
+      "height": 1024,
+      "enable_caching": true,
+      "cache_max_size_gb": 5.0
+    }
+  },
+  
+  "audio": {
+    "enabled": true,
+    "master_volume": 0.7,
+    "music_volume": 0.5,
+    "sfx_volume": 0.8,
+    "music_files": [
+      "medieval_theme.ogg",
+      "battle_music.ogg",
+      "ambient_tavern.ogg"
+    ]
+  },
+  
+  "controls": {
+    "mouse_sensitivity": 1.0,
+    "keyboard_shortcuts": {
+      "end_turn": "space",
+      "pause_game": "escape",
+      "full_screen": "f11",
+      "show_hand": "h",
+      "show_graveyard": "g"
+    }
+  },
+  
+  "performance": {
+    "max_fps": 60,
+    "vsync": true,
+    "hardware_acceleration": true,
+    "texture_quality": "high",
+    "animation_quality": "high",
+    "particle_effects": true
+  },
+  
+  "debug": {
+    "show_fps": false,
+    "show_memory_usage": false,
+    "enable_logging": true,
+    "log_level": "INFO",
+    "enable_profiling": false
+  }
+}
