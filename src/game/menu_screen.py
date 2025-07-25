@@ -96,6 +96,13 @@ class MenuScreen:
             logger.info("Carregando background do menu gerado por IA...")
             background_image = self.asset_generator.generate_menu_background()
             
+            if background_image is None:
+                # Fallback se não conseguir gerar
+                self.background_surface = pygame.Surface((self.width, self.height))
+                self.background_surface.fill(self.bg_color)
+                logger.warning("Não foi possível gerar background, usando cor sólida")
+                return
+            
             # Converter PIL para surface do Pygame
             pil_image = background_image.resize((self.width, self.height), Image.LANCZOS)
             
@@ -130,20 +137,6 @@ class MenuScreen:
         except Exception as e:
             logger.error(f"Erro ao carregar background do menu: {e}")
             # Fallback para background padrão
-            self.background_surface = pygame.Surface((self.width, self.height))
-            self.background_surface.fill(self.bg_color)
-            self.blur_surface = self.background_surface.copy()
-            blur_image = pil_image.filter(ImageFilter.GaussianBlur(radius=3))
-            
-            # Convert to pygame surfaces
-            self.background_surface = self._pil_to_pygame(pil_image)
-            self.blur_surface = self._pil_to_pygame(blur_image)
-            
-            logger.info("Background loaded successfully")
-            
-        except Exception as e:
-            logger.error(f"Failed to load background: {e}")
-            # Fallback to solid color
             self.background_surface = pygame.Surface((self.width, self.height))
             self.background_surface.fill(self.bg_color)
             self.blur_surface = self.background_surface.copy()
@@ -265,11 +258,24 @@ class MenuScreen:
         self.animation_time += dt
         
         # Simple animation time update - no card previews in main menu
+        
+    def enter_screen(self) -> None:
+        """Chamado quando a tela é ativada - sempre recarrega background."""
+        logger.info("Entrando na tela do menu...")
+        if self.asset_generator:
+            logger.info("Recarregando background do menu...")
+            self._load_background()
+        else:
+            logger.warning("Asset generator não disponível para recarregar background")
             
     def draw(self) -> None:
         """Draw the menu screen."""
         # Draw background
-        self.screen.blit(self.background_surface, (0, 0))
+        if self.background_surface:
+            self.screen.blit(self.background_surface, (0, 0))
+        else:
+            # Fallback background
+            self.screen.fill(self.bg_color)
             
         # Draw semi-transparent overlay for readability
         overlay = pygame.Surface((self.width, self.height))
@@ -277,18 +283,61 @@ class MenuScreen:
         overlay.fill((0, 0, 0))
         self.screen.blit(overlay, (0, 0))
         
-        # Draw title
-        title_text = self.title_font.render("Medieval Deck", True, self.accent_color)
+        # Draw title with golden medieval style
+        title_text = self.title_font.render("Medieval Deck", True, (255, 215, 0))  # Golden color
         title_rect = title_text.get_rect(center=(self.width // 2, 80))
+        
+        # Add glow effect to title
+        glow_text = self.title_font.render("Medieval Deck", True, (255, 255, 100))
+        for dx in [-2, -1, 0, 1, 2]:
+            for dy in [-2, -1, 0, 1, 2]:
+                if dx != 0 or dy != 0:
+                    glow_rect = title_rect.copy()
+                    glow_rect.x += dx
+                    glow_rect.y += dy
+                    self.screen.blit(glow_text, glow_rect)
+        
         self.screen.blit(title_text, title_rect)
         
-        # Draw menu buttons
-        for button in self.buttons:
-            # Button background
-            pygame.draw.rect(self.screen, self.primary_color, button["rect"])
-            pygame.draw.rect(self.screen, self.accent_color, button["rect"], 2)
+        # Draw subtitle
+        subtitle_text = self.button_font.render("AI-Generated Medieval Card Game", True, (245, 245, 220))  # Parchment color
+        subtitle_rect = subtitle_text.get_rect(center=(self.width // 2, 130))
+        self.screen.blit(subtitle_text, subtitle_rect)
+        
+        # Draw menu buttons with medieval styling
+        for i, button in enumerate(self.buttons):
+            # Button shadow
+            shadow_rect = button["rect"].copy()
+            shadow_rect.x += 3
+            shadow_rect.y += 3
+            pygame.draw.rect(self.screen, (0, 0, 0), shadow_rect)
             
-            # Button text
-            text = self.button_font.render(button["text"], True, self.text_color)
+            # Button background with gradient effect
+            base_color = (47, 47, 47)  # Dark stone
+            highlight_color = (105, 105, 105)  # Light stone
+            
+            # Create gradient effect
+            for y in range(button["rect"].height):
+                blend_factor = y / button["rect"].height
+                r = int(base_color[0] + (highlight_color[0] - base_color[0]) * blend_factor)
+                g = int(base_color[1] + (highlight_color[1] - base_color[1]) * blend_factor)
+                b = int(base_color[2] + (highlight_color[2] - base_color[2]) * blend_factor)
+                
+                line_rect = pygame.Rect(button["rect"].x, button["rect"].y + y, button["rect"].width, 1)
+                pygame.draw.rect(self.screen, (r, g, b), line_rect)
+            
+            # Button border with golden accent
+            pygame.draw.rect(self.screen, (218, 165, 32), button["rect"], 3)  # Golden border
+            
+            # Button text with medieval styling
+            text = self.button_font.render(button["text"], True, (245, 245, 220))  # Parchment color
             text_rect = text.get_rect(center=button["rect"].center)
+            
+            # Text shadow
+            shadow_text = self.button_font.render(button["text"], True, (0, 0, 0))
+            shadow_text_rect = text_rect.copy()
+            shadow_text_rect.x += 1
+            shadow_text_rect.y += 1
+            self.screen.blit(shadow_text, shadow_text_rect)
+            
             self.screen.blit(text, text_rect)

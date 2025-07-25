@@ -133,6 +133,12 @@ Examples:
         help="Regenerate character backgrounds with scenery-only prompts"
     )
     
+    parser.add_argument(
+        "--cinematic-assets",
+        action="store_true", 
+        help="Generate all cinematic assets (4K backgrounds, sprites, UI elements)"
+    )
+    
     return parser
 
 
@@ -316,6 +322,55 @@ def regenerate_character_backgrounds(
         logging.error(f"Failed to regenerate character backgrounds: {e}")
 
 
+def generate_cinematic_assets(
+    config: Config,
+    pipeline: Optional[object],
+    force_generate: bool = True
+) -> None:
+    """
+    Gera todos os assets cinematográficos: backgrounds 4K, sprites e UI.
+    
+    Args:
+        config: Configuration object
+        pipeline: SDXL pipeline
+        force_generate: Force generation even if exists
+    """
+    if pipeline is None:
+        logging.error("AI pipeline not available for cinematic asset generation")
+        return
+        
+    logging.info("🎬 Starting cinematic asset generation...")
+    
+    try:
+        # Initialize asset generator
+        asset_generator = AssetGenerator(
+            config=config,
+            sdxl_pipeline=pipeline,
+            cache_dir=str(config.assets_cache_dir)
+        )
+        
+        # Generate all cinematic assets
+        results = asset_generator.generate_all_cinematic_assets(
+            force_regenerate=force_generate
+        )
+        
+        # Log results
+        if results:
+            total_assets = sum(len(category) for category in results.values())
+            logging.info(f"🎉 Successfully generated {total_assets} cinematic assets!")
+            
+            for category, assets in results.items():
+                if assets:
+                    logging.info(f"  {category.title()}:")
+                    for asset_id, path in assets.items():
+                        logging.info(f"    {asset_id}: {path}")
+        else:
+            logging.warning("No cinematic assets were generated")
+        
+    except Exception as e:
+        logging.error(f"Failed to generate cinematic assets: {e}")
+
+
 def main():
     """Main entry point for Medieval Deck game."""
     # Parse command line arguments
@@ -385,6 +440,12 @@ def main():
         if args.character_backgrounds:
             regenerate_character_backgrounds(config, ai_pipeline, force_generate=True)
             logging.info("Character backgrounds regeneration completed. Exiting without starting game.")
+            return 0
+            
+        # Se for gerar assets cinematográficos, sair após gerar
+        if args.cinematic_assets:
+            generate_cinematic_assets(config, ai_pipeline, force_generate=True)
+            logging.info("Cinematic assets generation completed. Exiting without starting game.")
             return 0
             
         # Initialize game engine

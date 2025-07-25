@@ -928,6 +928,342 @@ class AssetGenerator:
         self._save_asset_cache()
         return generated_paths
 
+    def generate_cinematic_backgrounds(self, force_regenerate: bool = False) -> Dict[str, str]:
+        """
+        Gera backgrounds cinematográficos de alta qualidade para todas as telas.
+        Focado em ambientes épicos e atmosféricos sem personagens.
+        
+        Args:
+            force_regenerate: Força regeneração mesmo se existir no cache
+            
+        Returns:
+            Dicionário com paths dos backgrounds gerados
+        """
+        cinematic_prompts = {
+            "menu_cinematic": "vast ancient castle great hall, cathedral ceiling with stone arches, dramatic cinematic lighting, golden hour sunbeams through tall gothic windows, empty throne room, epic medieval atmosphere, masterpiece, high detail, atmospheric, no people",
+            
+            "knight_cinematic": "medieval castle courtyard at sunrise, wet cobblestone ground reflecting golden light, stone walls with heraldic banners flowing in breeze, empty training ground with weapon racks, dramatic lighting, cinematic composition, epic medieval atmosphere, no people",
+            
+            "wizard_cinematic": "ancient arcane library tower interior, floating mystical books and glowing scrolls in air, luminous magical runes carved in stone walls, crystal orbs emanating soft blue light, mystical haze and particle effects, cinematic lighting, magical atmosphere, no people",
+            
+            "assassin_cinematic": "moonlit medieval alley at night, narrow cobblestone passage between tall stone buildings, soft fog rolling through shadows, flickering lantern light creating dramatic contrasts, gothic architecture silhouettes, atmospheric lighting, mysterious ambiance, no people"
+        }
+        
+        if not self.sdxl_pipeline:
+            logger.warning("SDXL pipeline não disponível para geração de backgrounds cinematográficos")
+            return {}
+            
+        generated_paths = {}
+        
+        # Negative prompt otimizado para cenários puros
+        cinematic_negative_prompt = (
+            "blurry, low quality, pixelated, cartoon, anime, "
+            "text, watermark, signature, logo, bad anatomy, "
+            "deformed, distorted, ugly, poorly drawn, "
+            "people, person, human, character, figure, portrait, "
+            "knight, wizard, warrior, mage, assassin, soldiers, "
+            "face, body, arms, legs, hands, creatures, monsters, "
+            "dragons, beings, entities, characters, crowd, "
+            "silhouettes of people, human shapes"
+        )
+        
+        for background_id, prompt in cinematic_prompts.items():
+            cache_key = f"{background_id}_4k"
+            bg_path = self.config.assets_generated_dir / f"{background_id}.png"
+            
+            # Verificar se precisa regenerar
+            if not force_regenerate and bg_path.exists() and cache_key in self.asset_cache:
+                logger.info(f"Usando background cinematográfico {background_id} do cache: {bg_path}")
+                generated_paths[background_id] = str(bg_path)
+                continue
+            
+            try:
+                logger.info(f"Gerando background cinematográfico {background_id}...")
+                
+                # Carregar modelos se necessário
+                self.sdxl_pipeline.load_models()
+                
+                # Gerar background em resolução 4K
+                image = self.sdxl_pipeline.generate_image(
+                    prompt=prompt,
+                    negative_prompt=cinematic_negative_prompt,
+                    num_inference_steps=100,  # Mais steps para qualidade cinematográfica
+                    guidance_scale=9.0,       # CFG mais alto para melhor aderência ao prompt
+                    width=1024,
+                    height=1024
+                )
+                
+                # Redimensionar para ultrawide (3440x1440) com qualidade máxima
+                ultrawide_image = image.resize((3440, 1440), PIL.Image.LANCZOS)
+                
+                # Salvar com qualidade máxima
+                ultrawide_image.save(bg_path, "PNG", quality=100, optimize=False)
+                
+                # Atualizar cache
+                self.asset_cache[cache_key] = {
+                    "prompt": prompt,
+                    "path": str(bg_path),
+                    "generated_at": datetime.now().isoformat(),
+                    "type": "cinematic_background",
+                    "resolution": "3440x1440",
+                    "quality": "4K_cinematic"
+                }
+                
+                generated_paths[background_id] = str(bg_path)
+                logger.info(f"✅ Background cinematográfico {background_id} gerado: {bg_path}")
+                
+            except Exception as e:
+                logger.error(f"Erro ao gerar background cinematográfico {background_id}: {e}")
+        
+        # Salvar cache
+        self._save_asset_cache()
+        return generated_paths
+
+    def generate_character_sprites(self, force_regenerate: bool = False) -> Dict[str, str]:
+        """
+        Gera sprites de personagens transparentes em full-body.
+        
+        Args:
+            force_regenerate: Força regeneração mesmo se existir no cache
+            
+        Returns:
+            Dicionário com paths dos sprites gerados
+        """
+        character_prompts = {
+            "knight_sprite": "full body medieval knight portrait standing pose, golden ornate armor with intricate engravings, noble stance, detailed metalwork, heroic proportions, high quality render, transparent background, no background",
+            
+            "wizard_sprite": "full body arcane wizard portrait standing pose, flowing blue and purple mystical robes with magical symbols, wise elderly appearance, staff with glowing crystal, magical aura, transparent background, no background",
+            
+            "assassin_sprite": "full body shadow assassin portrait standing pose, dark leather armor and cloak, mysterious hooded figure, agile build, twin daggers, stealthy appearance, transparent background, no background"
+        }
+        
+        if not self.sdxl_pipeline:
+            logger.warning("SDXL pipeline não disponível para geração de sprites")
+            return {}
+            
+        generated_paths = {}
+        
+        # Negative prompt para sprites limpos
+        sprite_negative_prompt = (
+            "blurry, low quality, pixelated, cartoon, anime, "
+            "text, watermark, signature, logo, bad anatomy, "
+            "deformed, distorted, ugly, poorly drawn, "
+            "background, scenery, landscape, room, environment, "
+            "furniture, objects, extra limbs, multiple people, "
+            "cropped, partial body, incomplete"
+        )
+        
+        for character_id, prompt in character_prompts.items():
+            cache_key = f"{character_id}_transparent"
+            sprite_path = self.config.assets_generated_dir / f"{character_id}.png"
+            
+            # Verificar se precisa regenerar
+            if not force_regenerate and sprite_path.exists() and cache_key in self.asset_cache:
+                logger.info(f"Usando sprite {character_id} do cache: {sprite_path}")
+                generated_paths[character_id] = str(sprite_path)
+                continue
+            
+            try:
+                logger.info(f"Gerando sprite {character_id}...")
+                
+                # Carregar modelos se necessário
+                self.sdxl_pipeline.load_models()
+                
+                # Gerar sprite
+                image = self.sdxl_pipeline.generate_image(
+                    prompt=prompt,
+                    negative_prompt=sprite_negative_prompt,
+                    num_inference_steps=80,
+                    guidance_scale=8.5,
+                    width=512,   # Menor para sprites
+                    height=768   # Mais alto para full-body
+                )
+                
+                # Aplicar remoção de background (simulada por enquanto)
+                # Em implementação real, usaria algo como rembg ou similar
+                sprite_image = self._remove_background_simple(image)
+                
+                # Redimensionar para tamanho padrão de sprite
+                sprite_image = sprite_image.resize((400, 600), PIL.Image.LANCZOS)
+                
+                # Salvar como PNG com transparência
+                sprite_image.save(sprite_path, "PNG")
+                
+                # Atualizar cache
+                self.asset_cache[cache_key] = {
+                    "prompt": prompt,
+                    "path": str(sprite_path),
+                    "generated_at": datetime.now().isoformat(),
+                    "type": "character_sprite",
+                    "resolution": "400x600",
+                    "has_transparency": True
+                }
+                
+                generated_paths[character_id] = str(sprite_path)
+                logger.info(f"✅ Sprite {character_id} gerado: {sprite_path}")
+                
+            except Exception as e:
+                logger.error(f"Erro ao gerar sprite {character_id}: {e}")
+        
+        # Salvar cache
+        self._save_asset_cache()
+        return generated_paths
+
+    def generate_ui_assets(self, force_regenerate: bool = False) -> Dict[str, str]:
+        """
+        Gera assets de interface: botões, ícones, texturas.
+        
+        Args:
+            force_regenerate: Força regeneração mesmo se existir no cache
+            
+        Returns:
+            Dicionário com paths dos assets gerados
+        """
+        ui_prompts = {
+            "button_texture_gold": "medieval gilded button texture with intricate golden engravings, ornate border details, metallic surface, luxury finish, seamless texture, high quality",
+            
+            "button_texture_stone": "medieval stone button texture with carved details, weathered surface, ancient craftsmanship, granite-like appearance, seamless texture",
+            
+            "button_texture_mystical": "mystical magical button texture with glowing runes, ethereal energy patterns, purple and blue magical aura, enchanted surface",
+            
+            "arrow_left_icon": "ornamental medieval arrow icon pointing left, golden metallic finish, decorative flourishes, heraldic style, 64x64 pixels, transparent background",
+            
+            "arrow_right_icon": "ornamental medieval arrow icon pointing right, golden metallic finish, decorative flourishes, heraldic style, 64x64 pixels, transparent background",
+            
+            "scroll_texture": "ancient parchment scroll texture, aged paper with decorative borders, medieval manuscript style, seamless pattern",
+            
+            "frame_ornate": "ornate medieval frame border with golden filigree, decorative corners, royal heraldic design, transparent center"
+        }
+        
+        if not self.sdxl_pipeline:
+            logger.warning("SDXL pipeline não disponível para geração de assets UI")
+            return {}
+            
+        generated_paths = {}
+        
+        # Negative prompt para assets de UI
+        ui_negative_prompt = (
+            "blurry, low quality, pixelated, "
+            "text, watermark, signature, logo, "
+            "people, characters, faces, landscape, "
+            "3d, photorealistic, overly complex"
+        )
+        
+        for asset_id, prompt in ui_prompts.items():
+            cache_key = f"{asset_id}_ui"
+            asset_path = self.config.assets_generated_dir / f"{asset_id}.png"
+            
+            # Verificar se precisa regenerar
+            if not force_regenerate and asset_path.exists() and cache_key in self.asset_cache:
+                logger.info(f"Usando asset UI {asset_id} do cache: {asset_path}")
+                generated_paths[asset_id] = str(asset_path)
+                continue
+            
+            try:
+                logger.info(f"Gerando asset UI {asset_id}...")
+                
+                # Carregar modelos se necessário
+                self.sdxl_pipeline.load_models()
+                
+                # Tamanho baseado no tipo
+                if "icon" in asset_id:
+                    width, height = 64, 64
+                elif "button" in asset_id:
+                    width, height = 256, 64
+                elif "frame" in asset_id:
+                    width, height = 512, 512
+                else:
+                    width, height = 256, 256
+                
+                # Gerar asset
+                image = self.sdxl_pipeline.generate_image(
+                    prompt=prompt,
+                    negative_prompt=ui_negative_prompt,
+                    num_inference_steps=60,
+                    guidance_scale=8.0,
+                    width=width,
+                    height=height
+                )
+                
+                # Salvar asset
+                image.save(asset_path, "PNG", quality=95)
+                
+                # Atualizar cache
+                self.asset_cache[cache_key] = {
+                    "prompt": prompt,
+                    "path": str(asset_path),
+                    "generated_at": datetime.now().isoformat(),
+                    "type": "ui_asset",
+                    "resolution": f"{width}x{height}"
+                }
+                
+                generated_paths[asset_id] = str(asset_path)
+                logger.info(f"✅ Asset UI {asset_id} gerado: {asset_path}")
+                
+            except Exception as e:
+                logger.error(f"Erro ao gerar asset UI {asset_id}: {e}")
+        
+        # Salvar cache
+        self._save_asset_cache()
+        return generated_paths
+
+    def _remove_background_simple(self, image: PIL.Image.Image) -> PIL.Image.Image:
+        """
+        Remoção simples de background (placeholder).
+        Em implementação real, usaria rembg ou algoritmo similar.
+        
+        Args:
+            image: Imagem original
+            
+        Returns:
+            Imagem com background removido
+        """
+        # Por enquanto, apenas converte para RGBA e retorna
+        # TODO: Implementar remoção real de background
+        return image.convert("RGBA")
+
+    def generate_all_cinematic_assets(self, force_regenerate: bool = False) -> Dict[str, Dict[str, str]]:
+        """
+        Gera todos os assets cinematográficos: backgrounds, sprites e UI.
+        
+        Args:
+            force_regenerate: Força regeneração de todos os assets
+            
+        Returns:
+            Dicionário organizado por categoria com paths dos assets
+        """
+        logger.info("🎬 Iniciando geração completa de assets cinematográficos...")
+        
+        results = {
+            "backgrounds": {},
+            "sprites": {},
+            "ui_assets": {}
+        }
+        
+        try:
+            # Gerar backgrounds cinematográficos
+            logger.info("Gerando backgrounds cinematográficos...")
+            results["backgrounds"] = self.generate_cinematic_backgrounds(force_regenerate)
+            
+            # Gerar sprites de personagens
+            logger.info("Gerando sprites de personagens...")
+            results["sprites"] = self.generate_character_sprites(force_regenerate)
+            
+            # Gerar assets de UI
+            logger.info("Gerando assets de interface...")
+            results["ui_assets"] = self.generate_ui_assets(force_regenerate)
+            
+            # Estatísticas
+            total_generated = sum(len(category) for category in results.values())
+            logger.info(f"🎉 Geração cinematográfica completa! {total_generated} assets gerados:")
+            for category, assets in results.items():
+                logger.info(f"  {category}: {len(assets)} assets")
+                
+        except Exception as e:
+            logger.error(f"Erro durante geração cinematográfica: {e}")
+        
+        return results
+
     def __del__(self):
         """Cleanup on deletion."""
         try:

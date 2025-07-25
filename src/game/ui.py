@@ -16,7 +16,10 @@ from .engine import GameEngine, GamePhase
 from .cards import CardManager
 from .deck import DeckManager
 from .menu_screen import MenuScreen
+from .clean_menu_screen import CleanMenuScreen
 from .character_selection_screen import CharacterSelectionScreen
+from .clean_character_selection_screen import CleanCharacterSelectionScreen
+from .cinematic_character_screen import CinematicCharacterSelectionScreen
 from .character_screens import CharacterScreenManager
 from .stats_screen import StatsScreen
 from .story_screen import StoryScreen
@@ -27,7 +30,10 @@ logger = logging.getLogger(__name__)
 class UIState(Enum):
     """UI states."""
     MENU = "menu"
+    CLEAN_MENU = "clean_menu"
     CHARACTER_SELECTION = "character_selection"
+    CLEAN_CHARACTER_SELECTION = "clean_character_selection"
+    CINEMATIC_CHARACTER_SELECTION = "cinematic_character_selection"
     CHARACTER_DETAIL = "character_detail"  # Nova tela individual de personagem
     GAME = "game"
     DECK_BUILDER = "deck_builder"
@@ -90,7 +96,7 @@ class GameUI:
         self.deck_manager = DeckManager(self.card_manager, self.config)
         
         # UI state
-        self.current_state = UIState.MENU
+        self.current_state = UIState.MENU  # Voltar para o menu original
         self.running = True
         
         # Screens
@@ -104,18 +110,45 @@ class GameUI:
         
         logger.info("Game UI initialized")
         
+        # Initialize the starting screen
+        initial_screen = self.screens.get(self.current_state)
+        if initial_screen and hasattr(initial_screen, 'enter_screen'):
+            logger.info(f"Initializing starting screen: {self.current_state.value}")
+            initial_screen.enter_screen()
+        
     def _initialize_screens(self) -> None:
         """Initialize all screen objects."""
         try:
-            # Menu screen - main entry point
+            # Menu screens
             self.screens[UIState.MENU] = MenuScreen(
                 self.screen,
                 self.config,
                 self.asset_generator
             )
             
-            # Character selection screen
+            # Clean menu (new default)
+            self.screens[UIState.CLEAN_MENU] = CleanMenuScreen(
+                self.screen,
+                self.config,
+                self.asset_generator
+            )
+            
+            # Character selection screens
             self.screens[UIState.CHARACTER_SELECTION] = CharacterSelectionScreen(
+                self.screen,
+                self.config,
+                self.asset_generator
+            )
+            
+            # Clean character selection (new)
+            self.screens[UIState.CLEAN_CHARACTER_SELECTION] = CleanCharacterSelectionScreen(
+                self.screen,
+                self.config,
+                self.asset_generator
+            )
+            
+            # Cinematic character selection screen
+            self.screens[UIState.CINEMATIC_CHARACTER_SELECTION] = CinematicCharacterSelectionScreen(
                 self.screen,
                 self.config,
                 self.asset_generator
@@ -174,6 +207,10 @@ class GameUI:
         Args:
             action: Action string from screen
         """
+        # Verificar se action é uma string válida
+        if not action or not isinstance(action, str):
+            return
+            
         if action == "new_game":
             self._start_new_game()
         elif action == "deck_builder":
@@ -183,11 +220,15 @@ class GameUI:
         elif action == "quit_game":
             self.running = False
         elif action == "back_to_menu":
-            self._transition_to_state(UIState.MENU)
+            self._transition_to_state(UIState.CLEAN_MENU)
         elif action == "confirm_selection":
             self._confirm_character_selection()
         elif action == "back":
-            self._transition_to_state(UIState.MENU)
+            self._transition_to_state(UIState.CLEAN_MENU)
+        # Ações da tela cinematográfica
+        elif action.startswith("select_"):
+            character_id = action.replace("select_", "")
+            self._select_cinematic_character(character_id)
         # Novas ações para telas individuais de personagens
         elif action.startswith("show_character_"):
             character_type = action.replace("show_character_", "")
@@ -196,10 +237,28 @@ class GameUI:
             # Selecionar personagem da tela de seleção atual
             if self.current_state == UIState.CHARACTER_SELECTION:
                 self._confirm_character_selection()
+            elif self.current_state == UIState.CLEAN_CHARACTER_SELECTION:
+                self._confirm_clean_character_selection()
             elif self.current_state == UIState.CHARACTER_DETAIL:
                 self._select_character_from_detail()
         elif action == "back_to_selection":
             self._transition_to_state(UIState.CHARACTER_SELECTION)
+            
+    def _select_cinematic_character(self, character_id: str) -> None:
+        """
+        Seleciona um personagem da tela cinematográfica.
+        
+        Args:
+            character_id: ID do personagem (knight, wizard, assassin)
+        """
+        logger.info(f"Personagem cinematográfico selecionado: {character_id}")
+        
+        # TODO: Iniciar jogo com personagem selecionado
+        # Por enquanto, volta para o menu
+        self._transition_to_state(UIState.MENU)
+        
+        # Mensagem para o usuário
+        logger.info(f"Jogo iniciado com {character_id}!")
             
     def _show_character_detail(self, character_type: str) -> None:
         """
@@ -235,9 +294,9 @@ class GameUI:
             logger.error("Nenhum personagem selecionado")
             
     def _start_new_game(self) -> None:
-        """Start a new game - go to character selection."""
+        """Start a new game - go to clean character selection."""
         logger.info("Starting new game...")
-        self._transition_to_state(UIState.CHARACTER_SELECTION)
+        self._transition_to_state(UIState.CLEAN_CHARACTER_SELECTION)
         
     def _confirm_character_selection(self) -> None:
         """Confirm character selection and start game."""
@@ -246,6 +305,16 @@ class GameUI:
             selected_char = char_screen.get_selected_character()
             if selected_char:
                 logger.info(f"Character selected: {selected_char}")
+                # TODO: Start actual game with selected character
+                # self._transition_to_state(UIState.GAME)
+                
+    def _confirm_clean_character_selection(self) -> None:
+        """Confirm character selection from clean screen and start game."""
+        if self.current_state == UIState.CLEAN_CHARACTER_SELECTION:
+            char_screen = self.screens[UIState.CLEAN_CHARACTER_SELECTION]
+            selected_char = char_screen.get_selected_character()
+            if selected_char:
+                logger.info(f"Character selected from clean screen: {selected_char}")
                 # TODO: Start actual game with selected character
                 # self._transition_to_state(UIState.GAME)
         

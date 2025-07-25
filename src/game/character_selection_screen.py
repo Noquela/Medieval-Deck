@@ -210,6 +210,17 @@ class CharacterSelectionScreen:
         self.left_arrow_hovered = False
         self.right_arrow_hovered = False
     
+    def enter_screen(self) -> None:
+        """Chamado quando a tela é ativada - carrega assets se necessário."""
+        logger.info("Entrando na tela de seleção de personagens")
+        # Garantir que os assets do personagem atual estão carregados
+        self._load_character_assets(self.current_character)
+        
+        # Carregar assets dos outros personagens também
+        for character in self.characters:
+            if character["id"] != self.current_character["id"]:
+                self._load_character_assets(character)
+    
     def _load_initial_assets(self):
         """Carrega assets iniciais (fundo e retrato do personagem atual)."""
         self._load_character_assets(self.current_character)
@@ -222,34 +233,52 @@ class CharacterSelectionScreen:
             character: Dados do personagem
         """
         character_id = character["id"]
+        logger.info(f"🎭 Carregando assets para personagem: {character['name']} (ID: {character_id})")
         
         # Carregar fundo já gerado
         if character_id not in self.character_backgrounds:
             bg_path = self.config.assets_generated_dir / f"{character_id}_bg.png"
+            logger.info(f"📁 Tentando carregar background: {bg_path}")
+            logger.info(f"📁 Arquivo existe: {bg_path.exists()}")
             
             if bg_path.exists():
                 try:
                     # Carregar imagem gerada
                     bg_surface = pygame.image.load(str(bg_path)).convert()
+                    logger.info(f"📐 Tamanho original da imagem: {bg_surface.get_size()}")
                     
-                    # Redimensionar para resolução ultrawide se necessário
-                    if bg_surface.get_size() != (3440, 1440):
-                        bg_surface = pygame.transform.scale(bg_surface, (3440, 1440))
+                    # Redimensionar para resolução da tela
+                    screen_size = (self.screen.get_width(), self.screen.get_height())
+                    logger.info(f"📐 Tamanho da tela: {screen_size}")
                     
-                    # Aplicar escurecimento
-                    overlay = pygame.Surface((3440, 1440))
-                    overlay.set_alpha(100)  # 40% de transparência para escurecer
+                    if bg_surface.get_size() != screen_size:
+                        bg_surface = pygame.transform.scale(bg_surface, screen_size)
+                        logger.info(f"📐 Imagem redimensionada para: {bg_surface.get_size()}")
+                    
+                    # Aplicar escurecimento suave
+                    overlay = pygame.Surface(screen_size)
+                    overlay.set_alpha(120)  # Um pouco mais escuro para melhor legibilidade
                     overlay.fill((0, 0, 0))
                     
                     bg_surface.blit(overlay, (0, 0))
                     
                     self.character_backgrounds[character_id] = bg_surface
-                    logger.info(f"Fundo carregado para {character['name']}: {bg_path}")
+                    logger.info(f"✅ Fundo carregado e processado para {character['name']}")
                     
                 except Exception as e:
-                    logger.warning(f"Falha ao carregar fundo para {character['name']}: {e}")
+                    logger.error(f"❌ Falha ao carregar fundo para {character['name']}: {e}")
+                    # Criar background fallback
+                    bg_surface = pygame.Surface(screen_size)
+                    bg_surface.fill(character.get("theme_colors", {}).get("background", (40, 35, 25)))
+                    self.character_backgrounds[character_id] = bg_surface
             else:
-                logger.info(f"Fundo não encontrado para {character['name']}: {bg_path}")
+                logger.warning(f"⚠️ Background não encontrado para {character['name']}: {bg_path}")
+                # Criar background fallback
+                bg_surface = pygame.Surface((self.screen.get_width(), self.screen.get_height()))
+                bg_surface.fill(character.get("theme_colors", {}).get("background", (40, 35, 25)))
+                self.character_backgrounds[character_id] = bg_surface
+        else:
+            logger.info(f"🎯 Background já carregado para {character['name']}")
         
         # Fallback: criar fundo gradiente se não encontrou a imagem
         if character_id not in self.character_backgrounds:
@@ -441,7 +470,15 @@ class CharacterSelectionScreen:
         current_bg = self.character_backgrounds.get(self.current_character["id"])
         if current_bg:
             self.screen.blit(current_bg, (0, 0))
+            # Log apenas ocasionalmente para não spammar
+            if hasattr(self, '_draw_count'):
+                self._draw_count += 1
+            else:
+                self._draw_count = 1
+                logger.info(f"🎨 Desenhando background para {self.current_character['name']} - tamanho: {current_bg.get_size()}")
         else:
+            logger.warning(f"❌ Background não encontrado para {self.current_character['name']} (ID: {self.current_character['id']})")
+            logger.info(f"🗂️ Backgrounds disponíveis: {list(self.character_backgrounds.keys())}")
             self.screen.fill(self.current_character["theme_colors"]["background"])
         
         # Desenhar retrato do personagem
