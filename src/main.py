@@ -157,6 +157,24 @@ Examples:
         help="Process existing sprites to remove background using AI"
     )
     
+    parser.add_argument(
+        "--demo-turn-engine",
+        action="store_true",
+        help="Run Turn Engine demo (Fase 1 implementation)"
+    )
+    
+    parser.add_argument(
+        "--demo-gameplay",
+        action="store_true",
+        help="Run complete Gameplay demo (Fase 2 implementation)"
+    )
+    
+    parser.add_argument(
+        "--demo-intelligent-combat",
+        action="store_true",
+        help="Run Intelligent Combat demo (Fase 3 implementation)"
+    )
+    
     return parser
 
 
@@ -615,6 +633,42 @@ def main():
             process_existing_sprites(config, force_generate=True)
             logging.info("Sprite processing completed. Exiting without starting game.")
             return 0
+            
+        # Se for executar demo do Turn Engine
+        if args.demo_turn_engine:
+            logging.info("Running Turn Engine demo...")
+            try:
+                from demo_turn_engine import demo_turn_engine
+                demo_turn_engine()
+                logging.info("Turn Engine demo completed.")
+                return 0
+            except ImportError as e:
+                logging.error(f"Failed to import Turn Engine demo: {e}")
+                return 1
+        
+        # Se for executar demo do Gameplay completo
+        if args.demo_gameplay:
+            logging.info("Running complete Gameplay demo...")
+            try:
+                from demo_gameplay import main as demo_gameplay_main
+                result = demo_gameplay_main()
+                logging.info("Gameplay demo completed.")
+                return 0 if result else 1
+            except ImportError as e:
+                logging.error(f"Failed to import Gameplay demo: {e}")
+                return 1
+        
+        # Se for executar demo do Combate Inteligente
+        if args.demo_intelligent_combat:
+            logging.info("Running Intelligent Combat demo...")
+            try:
+                from demo_intelligent_combat import main as demo_intelligent_combat_main
+                result = demo_intelligent_combat_main()
+                logging.info("Intelligent Combat demo completed.")
+                return 0 if result else 1
+            except ImportError as e:
+                logging.error(f"Failed to import Intelligent Combat demo: {e}")
+                return 1
             
         # Initialize game engine
         logger.info("Initializing game engine...")
