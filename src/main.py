@@ -51,6 +51,7 @@ def setup_argument_parser() -> argparse.ArgumentParser:
 Examples:
   python main.py                     # Start game with default settings
   python main.py --generate-assets  # Generate AI backgrounds for all cards
+  python main.py --assets-only      # Generate AI assets and exit (no game)
   python main.py --debug            # Enable debug logging
   python main.py --no-ai            # Disable AI generation
   python main.py --system-info      # Print system information and exit
@@ -69,6 +70,12 @@ Examples:
         "--generate-assets",
         action="store_true",
         help="Generate AI backgrounds for all cards before starting game"
+    )
+    
+    parser.add_argument(
+        "--assets-only",
+        action="store_true",
+        help="Generate AI assets and exit without starting the game"
     )
     
     parser.add_argument(
@@ -118,6 +125,12 @@ Examples:
         "--force-gpu-fix",
         action="store_true",
         help="Force GPU compatibility fix without user confirmation"
+    )
+    
+    parser.add_argument(
+        "--character-backgrounds",
+        action="store_true",
+        help="Regenerate character backgrounds with scenery-only prompts"
     )
     
     return parser
@@ -260,6 +273,49 @@ def generate_initial_assets(
         logging.error(f"Failed to generate initial assets: {e}")
 
 
+def regenerate_character_backgrounds(
+    config: Config,
+    pipeline: Optional[object],
+    force_generate: bool = True
+) -> None:
+    """
+    Regenera backgrounds específicos dos personagens com cenários apenas.
+    
+    Args:
+        config: Configuration object
+        pipeline: SDXL pipeline
+        force_generate: Force generation even if exists
+    """
+    if pipeline is None:
+        logging.error("AI pipeline not available for character background generation")
+        return
+        
+    logging.info("Starting character background regeneration...")
+    
+    try:
+        # Initialize asset generator
+        asset_generator = AssetGenerator(
+            config=config,
+            sdxl_pipeline=pipeline,
+            cache_dir=str(config.assets_cache_dir)
+        )
+        
+        # Generate character backgrounds with new scenery-only prompts
+        generated_paths = asset_generator.generate_character_backgrounds(
+            force_regenerate=force_generate
+        )
+        
+        if generated_paths:
+            logging.info(f"Successfully regenerated {len(generated_paths)} character backgrounds")
+            for character_id, path in generated_paths.items():
+                logging.info(f"  {character_id}: {path}")
+        else:
+            logging.warning("No character backgrounds were generated")
+        
+    except Exception as e:
+        logging.error(f"Failed to regenerate character backgrounds: {e}")
+
+
 def main():
     """Main entry point for Medieval Deck game."""
     # Parse command line arguments
@@ -318,6 +374,18 @@ def main():
             generate_initial_assets(config, ai_pipeline, force_generate=True)
         else:
             logging.info("Skipping automatic asset generation - using existing images")
+        
+        # Se for modo apenas assets, sair após gerar
+        if args.assets_only:
+            generate_initial_assets(config, ai_pipeline, force_generate=True)
+            logging.info("Assets generation completed. Exiting without starting game.")
+            return 0
+            
+        # Se for regenerar backgrounds dos personagens, sair após gerar
+        if args.character_backgrounds:
+            regenerate_character_backgrounds(config, ai_pipeline, force_generate=True)
+            logging.info("Character backgrounds regeneration completed. Exiting without starting game.")
+            return 0
             
         # Initialize game engine
         logger.info("Initializing game engine...")

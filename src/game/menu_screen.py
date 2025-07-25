@@ -82,22 +82,57 @@ class MenuScreen:
         logger.info("Menu screen initialized")
         
     def _load_background(self) -> None:
-        """Load and prepare background image with blur effect."""
+        """Carrega background do menu gerado por IA com efeito de blur."""
         if not self.asset_generator:
-            # Create default background
+            # Criar background padrão quando IA não está disponível
             self.background_surface = pygame.Surface((self.width, self.height))
             self.background_surface.fill(self.bg_color)
             self.blur_surface = self.background_surface.copy()
+            logger.info("Background padrão criado (IA não disponível)")
             return
             
         try:
-            # Generate or load background
-            background_image = self.asset_generator.generate_background()
+            # Gerar ou carregar background do menu com IA
+            logger.info("Carregando background do menu gerado por IA...")
+            background_image = self.asset_generator.generate_menu_background()
             
-            # Convert PIL to pygame surface
+            # Converter PIL para surface do Pygame
             pil_image = background_image.resize((self.width, self.height), Image.LANCZOS)
             
-            # Create blur version
+            # Aplicar blur leve para efeito atmosférico
+            import PIL.ImageFilter
+            blurred_image = pil_image.filter(PIL.ImageFilter.GaussianBlur(radius=2))
+            
+            # Converter para Surface do Pygame
+            mode = blurred_image.mode
+            size = blurred_image.size
+            data = blurred_image.tobytes()
+            
+            self.background_surface = pygame.image.fromstring(data, size, mode).convert()
+            
+            # Criar overlay escuro para melhorar legibilidade do texto
+            overlay = pygame.Surface((self.width, self.height))
+            overlay.set_alpha(80)  # 30% de transparência
+            overlay.fill((0, 0, 0))
+            
+            # Aplicar overlay no background
+            self.background_surface.blit(overlay, (0, 0))
+            
+            # Criar versão ainda mais escura para transições
+            self.blur_surface = self.background_surface.copy()
+            dark_overlay = pygame.Surface((self.width, self.height))
+            dark_overlay.set_alpha(120)  # 50% de transparência adicional
+            dark_overlay.fill((0, 0, 0))
+            self.blur_surface.blit(dark_overlay, (0, 0))
+            
+            logger.info("Background do menu carregado com sucesso!")
+            
+        except Exception as e:
+            logger.error(f"Erro ao carregar background do menu: {e}")
+            # Fallback para background padrão
+            self.background_surface = pygame.Surface((self.width, self.height))
+            self.background_surface.fill(self.bg_color)
+            self.blur_surface = self.background_surface.copy()
             blur_image = pil_image.filter(ImageFilter.GaussianBlur(radius=3))
             
             # Convert to pygame surfaces

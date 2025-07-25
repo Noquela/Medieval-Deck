@@ -255,10 +255,38 @@ class CharacterSelectionScreen:
         if character_id not in self.character_backgrounds:
             self.character_backgrounds[character_id] = self._create_gradient_background(character)
         
-        # Carregar retrato ou criar placeholder
+        # Carregar sprite do personagem gerado por IA
         if character_id not in self.character_portraits:
-            # Por enquanto usar placeholder até termos retratos gerados
-            self.character_portraits[character_id] = self._create_character_placeholder(character)
+            if self.asset_generator:
+                try:
+                    logger.info(f"Gerando sprite de {character['name']} com IA...")
+                    
+                    # Gerar sprite usando IA
+                    sprite_image = self.asset_generator.generate_character_sprite(character['name'])
+                    
+                    if sprite_image:
+                        # Redimensionar sprite para tamanho adequado (mais alto que largo)
+                        sprite_resized = sprite_image.resize((600, 800), Image.LANCZOS)
+                        
+                        # Converter para Surface do Pygame com transparência
+                        mode = sprite_resized.mode
+                        if mode != "RGBA":
+                            sprite_resized = sprite_resized.convert("RGBA")
+                        
+                        size = sprite_resized.size
+                        data = sprite_resized.tobytes()
+                        
+                        sprite_surface = pygame.image.fromstring(data, size, "RGBA").convert_alpha()
+                        
+                        self.character_portraits[character_id] = sprite_surface
+                        logger.info(f"Sprite de {character['name']} gerado com sucesso!")
+                    
+                except Exception as e:
+                    logger.warning(f"Falha ao gerar sprite de {character['name']}: {e}")
+            
+            # Fallback: criar placeholder se não conseguiu gerar sprite
+            if character_id not in self.character_portraits:
+                self.character_portraits[character_id] = self._create_character_placeholder(character)
     
     def _create_gradient_background(self, character: Dict[str, Any]) -> pygame.Surface:
         """Cria um fundo com gradiente temático como fallback."""

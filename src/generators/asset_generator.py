@@ -94,6 +94,7 @@ class AssetGenerator:
     def _get_card_base_prompt(self, card: Card) -> str:
         """
         Generate base prompt for card based on its properties.
+        Foca apenas em cenários medievais, sem personagens.
         
         Args:
             card: Card to generate prompt for
@@ -103,23 +104,23 @@ class AssetGenerator:
         """
         prompts = []
         
-        # Card type specific prompts
+        # Card type specific prompts - APENAS CENÁRIOS
         type_prompts = {
             CardType.CREATURE: [
-                "medieval fantasy creature", "monster", "beast",
-                "dark forest", "ancient ruins", "mystical cavern"
+                "medieval castle courtyard", "dark forest clearing", "ancient stone ruins",
+                "misty swampland", "dragon's lair cavern", "abandoned battlefield"
             ],
             CardType.SPELL: [
-                "magical energy", "spell casting", "arcane symbols",
-                "wizard tower", "enchanted library", "mystical ritual"
+                "mystical library interior", "ancient wizard tower room", "magical ritual chamber",
+                "enchanted forest glade", "floating magical islands", "arcane observatory"
             ],
             CardType.ARTIFACT: [
-                "ancient relic", "magical item", "ornate weapon",
-                "treasure chamber", "sacred temple", "royal vault"
+                "royal treasure chamber", "sacred temple interior", "ancient armory",
+                "forgotten tomb chamber", "golden palace hall", "mystical shrine"
             ],
             CardType.LAND: [
-                "medieval landscape", "fantasy realm", "ancient kingdom",
-                "rolling hills", "dark forest", "mountain pass"
+                "medieval landscape", "fantasy kingdom vista", "ancient castle on hill",
+                "rolling green hills", "dark enchanted forest", "mountain pass road"
             ]
         }
         
@@ -140,6 +141,13 @@ class AssetGenerator:
         # Add card-specific prompt if available
         if card.background_prompt:
             prompts.append(card.background_prompt)
+        
+        # Adicionar prompts que garantem apenas cenário
+        scene_prompts = [
+            "environment only", "landscape view", "architectural interior",
+            "scenic background", "empty scene", "no people"
+        ]
+        prompts.extend(scene_prompts)
             
         return ", ".join(prompts)
         
@@ -170,12 +178,23 @@ class AssetGenerator:
             rarity=card.rarity
         )
         
-        # Generation parameters
+        # Generation parameters - com negative prompt específico para cenários
+        background_negative_prompt = (
+            "blurry, low quality, pixelated, cartoon, anime, "
+            "text, watermark, signature, logo, bad anatomy, "
+            "deformed, distorted, ugly, poorly drawn, "
+            "people, person, human, character, figure, portrait, "
+            "knight, wizard, warrior, mage, assassin, soldiers, "
+            "face, body, arms, legs, hands, creatures, monsters, "
+            "dragons, beings, entities"
+        )
+        
         params = {
             "num_inference_steps": 80,
             "guidance_scale": 8.5,
             "width": 1024,
             "height": 1024,
+            "negative_prompt": background_negative_prompt,
             **generation_params
         }
         
@@ -619,6 +638,295 @@ class AssetGenerator:
         
         logger.info(f"{card_type.capitalize()} card image generated successfully")
         return image
+
+    def generate_menu_background(self, force_regenerate: bool = False) -> PIL.Image.Image:
+        """
+        Gera background do menu principal com IA.
+        
+        Args:
+            force_regenerate: Força regeneração mesmo se existir no cache
+            
+        Returns:
+            Imagem PIL do background do menu
+        """
+        cache_key = "menu_bg"
+        
+        # Verificar cache primeiro
+        if not force_regenerate and cache_key in self.asset_cache:
+            cached_path = Path(self.asset_cache[cache_key]["path"])
+            if cached_path.exists():
+                logger.info(f"Usando background de menu do cache: {cached_path}")
+                return PIL.Image.open(cached_path)
+        
+        if not self.sdxl_pipeline:
+            logger.warning("SDXL pipeline não disponível para geração de menu")
+            return self._create_fallback_menu_background()
+        
+        # Prompt otimizado para menu principal
+        prompt = "grand medieval castle great hall, stone walls with hanging banners, epic cinematic lighting, dramatic atmosphere, gothic architecture, empty majestic scene, masterpiece, high quality, detailed"
+        
+        logger.info("Gerando background do menu principal com IA...")
+        
+        try:
+            # Gerar imagem ultrawide para o menu
+            image = self.sdxl_pipeline.generate_image(
+                prompt=prompt,
+                num_inference_steps=80,
+                guidance_scale=8.5,
+                width=1024,  # Será redimensionado para ultrawide depois
+                height=1024
+            )
+            
+            # Salvar no cache
+            menu_path = self.config.assets_generated_dir / "menu_background.png"
+            image.save(menu_path, "PNG", quality=95)
+            
+            # Atualizar cache
+            self.asset_cache[cache_key] = {
+                "prompt": prompt,
+                "path": str(menu_path),
+                "generated_at": datetime.now().isoformat(),
+                "type": "menu_background"
+            }
+            self._save_asset_cache()
+            
+            logger.info("Background do menu gerado com sucesso!")
+            return image
+            
+        except Exception as e:
+            logger.error(f"Erro ao gerar background do menu: {e}")
+            return self._create_fallback_menu_background()
+
+    def generate_character_sprite(self, character_name: str, force_regenerate: bool = False) -> PIL.Image.Image:
+        """
+        Gera sprite de personagem com IA.
+        
+        Args:
+            character_name: Nome do personagem (Cavaleiro, Mago, Assassino)
+            force_regenerate: Força regeneração mesmo se existir no cache
+            
+        Returns:
+            Imagem PIL do sprite do personagem
+        """
+        # Mapear nomes para prompts específicos
+        prompt_map = {
+            "Cavaleiro Valente": "full body illustration of a valiant medieval knight in golden armor, epic heroic pose, detailed armor with engravings, cape flowing, masterpiece character art, high quality",
+            "Mestre Arcano": "full body illustration of an arcane wizard in dark blue robes, magical aura, staff with glowing orb, mystical energy swirling around, detailed character art, high quality",
+            "Assassino das Sombras": "full body illustration of a shadow assassin with dark hood, leather armor, daggers, mysterious pose in shadows, detailed character art, high quality"
+        }
+        
+        cache_key = f"{character_name}_sprite"
+        
+        # Verificar cache primeiro
+        if not force_regenerate and cache_key in self.asset_cache:
+            cached_path = Path(self.asset_cache[cache_key]["path"])
+            if cached_path.exists():
+                logger.info(f"Usando sprite de {character_name} do cache: {cached_path}")
+                return PIL.Image.open(cached_path)
+        
+        if character_name not in prompt_map:
+            logger.warning(f"Personagem {character_name} não reconhecido")
+            return self._create_fallback_character_sprite(character_name)
+        
+        if not self.sdxl_pipeline:
+            logger.warning("SDXL pipeline não disponível para geração de sprite")
+            return self._create_fallback_character_sprite(character_name)
+        
+        prompt = prompt_map[character_name]
+        logger.info(f"Gerando sprite de {character_name} com IA...")
+        
+        try:
+            # Gerar sprite do personagem
+            image = self.sdxl_pipeline.generate_image(
+                prompt=prompt,
+                num_inference_steps=80,
+                guidance_scale=8.5,
+                width=768,   # Proporção mais adequada para personagem
+                height=1024
+            )
+            
+            # Salvar no cache
+            sprite_filename = f"{character_name.lower().replace(' ', '_')}_sprite.png"
+            sprite_path = self.config.assets_generated_dir / sprite_filename
+            image.save(sprite_path, "PNG", quality=95)
+            
+            # Atualizar cache
+            self.asset_cache[cache_key] = {
+                "prompt": prompt,
+                "path": str(sprite_path),
+                "generated_at": datetime.now().isoformat(),
+                "type": "character_sprite"
+            }
+            self._save_asset_cache()
+            
+            logger.info(f"Sprite de {character_name} gerado com sucesso!")
+            return image
+            
+        except Exception as e:
+            logger.error(f"Erro ao gerar sprite de {character_name}: {e}")
+            return self._create_fallback_character_sprite(character_name)
+
+    def _create_fallback_menu_background(self) -> PIL.Image.Image:
+        """Cria background de menu fallback quando IA não está disponível."""
+        logger.info("Criando background de menu fallback")
+        
+        # Criar gradiente medieval como fallback
+        image = PIL.Image.new("RGB", (1024, 1024), (40, 35, 25))  # Marrom escuro
+        
+        # Adicionar textura simples (pode ser expandido)
+        import PIL.ImageDraw
+        draw = PIL.ImageDraw.Draw(image)
+        
+        # Gradiente simples
+        for y in range(1024):
+            color_intensity = int(40 + (y / 1024) * 30)
+            draw.line([(0, y), (1024, y)], fill=(color_intensity, color_intensity - 5, color_intensity - 10))
+        
+        return image
+
+    def _create_fallback_character_sprite(self, character_name: str) -> PIL.Image.Image:
+        """Cria sprite de personagem fallback quando IA não está disponível."""
+        logger.info(f"Criando sprite fallback para {character_name}")
+        
+        # Cores temáticas por personagem
+        theme_colors = {
+            "Cavaleiro Valente": (255, 215, 0),      # Dourado
+            "Mestre Arcano": (138, 43, 226),         # Roxo
+            "Assassino das Sombras": (105, 105, 105) # Cinza escuro
+        }
+        
+        color = theme_colors.get(character_name, (128, 128, 128))
+        
+        # Criar placeholder colorido
+        image = PIL.Image.new("RGBA", (768, 1024), (0, 0, 0, 0))  # Transparente
+        
+        import PIL.ImageDraw
+        draw = PIL.ImageDraw.Draw(image)
+        
+        # Desenhar silhueta simples do personagem
+        center_x, center_y = 384, 512
+        
+        # Corpo básico
+        draw.ellipse([center_x-80, center_y-200, center_x+80, center_y+200], fill=color)
+        
+        # Cabeça
+        draw.ellipse([center_x-40, center_y-280, center_x+40, center_y-200], fill=color)
+        
+        return image
+
+    def preload_menu_assets(self) -> Dict[str, Any]:
+        """
+        Pré-carrega todos os assets do menu para melhor performance.
+        
+        Returns:
+            Dicionário com assets carregados
+        """
+        logger.info("Pré-carregando assets do menu...")
+        
+        assets = {}
+        
+        try:
+            # Background do menu
+            assets["menu_background"] = self.generate_menu_background()
+            
+            # Sprites dos personagens
+            characters = ["Cavaleiro Valente", "Mestre Arcano", "Assassino das Sombras"]
+            assets["character_sprites"] = {}
+            
+            for character in characters:
+                assets["character_sprites"][character] = self.generate_character_sprite(character)
+            
+            logger.info("Assets do menu pré-carregados com sucesso!")
+            
+        except Exception as e:
+            logger.error(f"Erro no pré-carregamento de assets: {e}")
+        
+        return assets
+
+    def generate_character_backgrounds(self, force_regenerate: bool = False) -> Dict[str, str]:
+        """
+        Gera backgrounds específicos para os personagens da tela de seleção.
+        Foca apenas em cenários medievais sem personagens.
+        
+        Args:
+            force_regenerate: Força regeneração mesmo se existir no cache
+            
+        Returns:
+            Dicionário com paths dos backgrounds gerados
+        """
+        character_prompts = {
+            "knight": "medieval castle courtyard at golden hour, stone walls with banners, empty training ground, armor stands, medieval architecture, no people, environment only, scenic background",
+            "wizard": "ancient wizard tower interior, floating books and scrolls, magical crystals, arcane symbols on walls, mystical library, empty study room, no people, environment only, scenic background", 
+            "assassin": "dark medieval alley at night, stone buildings with shadows, moonlight through narrow passages, empty streets, gothic architecture, no people, environment only, scenic background"
+        }
+        
+        if not self.sdxl_pipeline:
+            logger.warning("SDXL pipeline não disponível para geração de backgrounds")
+            return {}
+            
+        generated_paths = {}
+        
+        # Negative prompt específico para cenários sem personagens
+        character_negative_prompt = (
+            "blurry, low quality, pixelated, cartoon, anime, "
+            "text, watermark, signature, logo, bad anatomy, "
+            "deformed, distorted, ugly, poorly drawn, "
+            "people, person, human, character, figure, portrait, "
+            "knight, wizard, warrior, mage, assassin, soldiers, "
+            "face, body, arms, legs, hands, creatures, monsters, "
+            "dragons, beings, entities, characters"
+        )
+        
+        for character_id, prompt in character_prompts.items():
+            cache_key = f"{character_id}_bg_new"
+            bg_path = self.config.assets_generated_dir / f"{character_id}_bg.png"
+            
+            # Verificar se precisa regenerar
+            if not force_regenerate and bg_path.exists() and cache_key in self.asset_cache:
+                logger.info(f"Usando background de {character_id} do cache: {bg_path}")
+                generated_paths[character_id] = str(bg_path)
+                continue
+            
+            try:
+                logger.info(f"Gerando background para personagem {character_id}...")
+                
+                # Carregar modelos se necessário
+                self.sdxl_pipeline.load_models()
+                
+                # Gerar background do personagem
+                image = self.sdxl_pipeline.generate_image(
+                    prompt=prompt,
+                    negative_prompt=character_negative_prompt,
+                    num_inference_steps=80,
+                    guidance_scale=8.5,
+                    width=1024,
+                    height=1024
+                )
+                
+                # Redimensionar para ultrawide (3440x1440)
+                ultrawide_image = image.resize((3440, 1440), PIL.Image.LANCZOS)
+                
+                # Salvar background
+                ultrawide_image.save(bg_path, "PNG", quality=95)
+                
+                # Atualizar cache
+                self.asset_cache[cache_key] = {
+                    "prompt": prompt,
+                    "path": str(bg_path),
+                    "generated_at": datetime.now().isoformat(),
+                    "type": "character_background",
+                    "resolution": "3440x1440"
+                }
+                
+                generated_paths[character_id] = str(bg_path)
+                logger.info(f"✅ Background de {character_id} gerado: {bg_path}")
+                
+            except Exception as e:
+                logger.error(f"Erro ao gerar background de {character_id}: {e}")
+        
+        # Salvar cache
+        self._save_asset_cache()
+        return generated_paths
 
     def __del__(self):
         """Cleanup on deletion."""
