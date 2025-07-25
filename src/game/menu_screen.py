@@ -50,17 +50,18 @@ class MenuScreen:
         # Animation states  
         self.animation_time = 0.0
         
-        # Simple menu buttons - only 3 main options
+        # Simple menu buttons - now with combat test option
         button_width = 250
         button_height = 60
         button_spacing = 80
-        start_y = self.height // 2 - 60
+        start_y = self.height // 2 - 80
         center_x = self.width // 2 - button_width // 2
         
         self.buttons = [
             {"text": "Start Game", "rect": pygame.Rect(center_x, start_y, button_width, button_height), "action": "new_game"},
-            {"text": "Settings", "rect": pygame.Rect(center_x, start_y + button_spacing, button_width, button_height), "action": "settings"},
-            {"text": "Quit Game", "rect": pygame.Rect(center_x, start_y + (button_spacing * 2), button_width, button_height), "action": "quit_game"},
+            {"text": "Combat Test", "rect": pygame.Rect(center_x, start_y + button_spacing, button_width, button_height), "action": "combat_test"},
+            {"text": "Settings", "rect": pygame.Rect(center_x, start_y + (button_spacing * 2), button_width, button_height), "action": "settings"},
+            {"text": "Quit Game", "rect": pygame.Rect(center_x, start_y + (button_spacing * 3), button_width, button_height), "action": "quit_game"},
         ]
         
         # Fonts

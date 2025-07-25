@@ -221,6 +221,8 @@ class GameUI:
             
         if action == "new_game":
             self._start_new_game()
+        elif action == "combat_test":
+            self._start_combat_test()
         elif action == "deck_builder":
             self._open_deck_builder()
         elif action == "settings":
@@ -265,12 +267,20 @@ class GameUI:
         
         # Inicializar tela de combate se ainda não foi criada
         if self.screens[UIState.COMBAT] is None:
+            logger.info("Combat screen not initialized, creating now...")
             self._initialize_combat_screen(character_id)
+        else:
+            logger.info("Combat screen already exists")
         
-        # Transição para a tela de combate
-        self._transition_to_state(UIState.COMBAT)
-        
-        logger.info(f"Jogo iniciado com {character_id}!")
+        # Verificar se foi criada com sucesso
+        if self.screens[UIState.COMBAT] is not None:
+            logger.info("Combat screen ready, transitioning to combat state")
+            # Transição para a tela de combate
+            self._transition_to_state(UIState.COMBAT)
+            logger.info(f"Jogo iniciado com {character_id}!")
+        else:
+            logger.error("Combat screen creation failed, staying in current state")
+            # Não fazer transição se falhou
     
     def _initialize_combat_screen(self, character_id: str) -> None:
         """
@@ -280,25 +290,30 @@ class GameUI:
             character_id: ID do personagem (knight, wizard, assassin)
         """
         try:
+            logger.info(f"Initializing combat screen for character: {character_id}")
+            
             # Criar player baseado no personagem selecionado
             player = Player(max_hp=30, max_mana=10)
+            logger.info(f"Player created: HP={player.hp}/{player.max_hp}, Mana={player.mana}/{player.max_mana}")
             
             # Inicializar combat engine com player
             combat_engine = IntelligentCombatEngine(
                 player=player,
                 encounter_type="goblin_patrol"
             )
+            logger.info(f"Combat engine created with encounter: goblin_patrol")
             
             # Criar a tela de combate
             self.screens[UIState.COMBAT] = CombatScreen(
                 self.screen,
-                combat_engine
+                combat_engine,
+                self.asset_generator
             )
             
-            logger.info(f"Combat screen initialized for character: {character_id}")
+            logger.info(f"Combat screen initialized successfully for character: {character_id}")
             
         except Exception as e:
-            logger.error(f"Failed to initialize combat screen: {e}")
+            logger.error(f"Failed to initialize combat screen: {e}", exc_info=True)
             # Fallback para o menu
             self._transition_to_state(UIState.MENU)
             
@@ -340,6 +355,12 @@ class GameUI:
         logger.info("Starting new game...")
         self._transition_to_state(UIState.CHARACTER_SELECTION)  # Use the original character selection with backgrounds
         
+    def _start_combat_test(self) -> None:
+        """Start combat test directly with default character."""
+        logger.info("Starting combat test...")
+        # Use default knight character for testing
+        self._select_cinematic_character("knight")
+        
     def _confirm_character_selection(self) -> None:
         """Confirm character selection and start game."""
         if self.current_state == UIState.CHARACTER_SELECTION:
@@ -347,8 +368,8 @@ class GameUI:
             selected_char = char_screen.get_selected_character()
             if selected_char:
                 logger.info(f"Character selected: {selected_char}")
-                # TODO: Start actual game with selected character
-                # self._transition_to_state(UIState.GAME)
+                # Iniciar combate com personagem selecionado
+                self._select_cinematic_character(selected_char)
                 
     def _confirm_clean_character_selection(self) -> None:
         """Confirm character selection from clean screen and start game."""
@@ -357,8 +378,8 @@ class GameUI:
             selected_char = char_screen.get_selected_character()
             if selected_char:
                 logger.info(f"Character selected from clean screen: {selected_char}")
-                # TODO: Start actual game with selected character
-                # self._transition_to_state(UIState.GAME)
+                # Iniciar combate com personagem selecionado
+                self._select_cinematic_character(selected_char)
         
     def _open_deck_builder(self) -> None:
         """Open deck builder."""
