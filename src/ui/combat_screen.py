@@ -217,7 +217,11 @@ class CombatScreen:
         self.turn_transition_active = False
         self.turn_transition_timer = 0
         
-        logger.info("Professional CombatScreen initialized")
+        # Sistema de animação P2
+        from ..gameplay.animation import animation_manager
+        self.animation_manager = animation_manager
+        
+        logger.info("Professional CombatScreen initialized with P2 Animation System")
         
     def _load_ia_assets(self):
         """Carrega todos os assets gerados por IA usando o AssetLoader."""
@@ -525,9 +529,132 @@ class CombatScreen:
         logger.info("Botões configurados com texturas IA")
         
     def _init_demo_hand(self):
-        """Inicializa mão de demonstração com cartas para P1 drag & drop."""
-        # Criar cartas de demonstração (estrutura simples para P1)
-        demo_cards = [
+        """Inicializa mão de demonstração com cartas para P2 com CardSprite system."""
+        # P2-6: Usar draw_initial_hand em vez de demo estático
+        self.draw_initial_hand()
+            
+    # ========== P2-6: HAND LOGIC ==========
+    
+    def draw_initial_hand(self):
+        """P2-6: Draw initial 5 cards para iniciar o combate."""
+        self.player_hand.clear()
+        
+        # Simular deck de cartas (expandir no futuro)
+        available_cards = [
+            {"name": "Fireball", "cost": 3, "damage": 4, "type": "spell"},
+            {"name": "Sword Strike", "cost": 2, "damage": 3, "type": "attack"},
+            {"name": "Heal", "cost": 2, "heal": 3, "type": "heal"},
+            {"name": "Lightning Bolt", "cost": 4, "damage": 5, "type": "spell"},
+            {"name": "Shield Block", "cost": 1, "defense": 2, "type": "defense"},
+            {"name": "Ice Shard", "cost": 2, "damage": 2, "type": "spell"},
+            {"name": "Power Strike", "cost": 3, "damage": 4, "type": "attack"},
+            {"name": "Minor Heal", "cost": 1, "heal": 2, "type": "heal"}
+        ]
+        
+        # Draw 5 cartas aleatórias
+        import random
+        selected_cards = random.sample(available_cards, min(5, len(available_cards)))
+        
+        for i, card_data in enumerate(selected_cards):
+            self._add_card_to_hand(card_data, i)
+            
+        logger.info(f"P2-6: Drew initial hand of {len(self.player_hand)} cards")
+        
+    def _add_card_to_hand(self, card_data: dict, position: int):
+        """P2-6: Adiciona uma carta na mão na posição especificada com CardSprite."""
+        slot_width = self.player_hand_zone.width // 5
+        slot_height = self.player_hand_zone.height - 20
+        
+        slot_x = self.player_hand_zone.left + position * slot_width + 10
+        slot_y = self.player_hand_zone.top + 10
+        
+        # P2: Criar CardSprite para animações avançadas
+        from .card_sprite import CardSprite
+        card_sprite = None
+        try:
+            card_surface = self._create_card_surface(card_data, slot_width - 20, slot_height)
+            card_sprite = CardSprite(card_surface, (slot_x, slot_y))  # Posição como tupla
+        except Exception as e:
+            logger.warning(f"Failed to create CardSprite: {e}")
+        
+        card = {
+            "data": card_data,
+            "rect": pygame.Rect(slot_x, slot_y, slot_width - 20, slot_height),
+            "original_pos": (slot_x, slot_y),
+            "is_hovered": False,
+            "is_selected": False,
+            "slot_index": position,
+            # P2: CardSprite integration
+            "sprite": card_sprite,
+            # P2: Propriedades de animação aprimoradas (fallback)
+            "hover_offset_y": 0,
+            "target_hover_y": 0,
+            "scale": 1.0,
+            "target_scale": 1.0,
+            "glow_alpha": 0,
+            "target_glow_alpha": 0,
+            "rotation": 0,
+            "target_rotation": 0,
+            "animation_time": 0,
+            "bob_offset": position * 0.5,
+            # P2: Card draw animation
+            "draw_animation": True,
+            "draw_progress": 0.0
+        }
+        self.player_hand.append(card)
+        
+    def _create_card_surface(self, card_data: dict, width: int, height: int) -> pygame.Surface:
+        """P2: Cria surface visual para carta."""
+        surface = pygame.Surface((width, height), pygame.SRCALPHA)
+        
+        # Background da carta
+        card_color = {
+            "spell": (120, 80, 200),     # Roxo para spells
+            "attack": (200, 80, 80),     # Vermelho para ataques
+            "heal": (80, 200, 120),      # Verde para cura
+            "defense": (80, 120, 200)    # Azul para defesa
+        }.get(card_data.get("type", "spell"), (150, 150, 150))
+        
+        # Desenhar background com gradiente simples
+        pygame.draw.rect(surface, card_color, surface.get_rect(), border_radius=8)
+        pygame.draw.rect(surface, (255, 255, 255), surface.get_rect(), width=2, border_radius=8)
+        
+        # Renderizar texto (simples para P2)
+        if hasattr(pygame, 'font') and pygame.font.get_init():
+            font = pygame.font.Font(None, 24)
+            text = font.render(card_data["name"], True, (255, 255, 255))
+            text_rect = text.get_rect(centerx=width//2, y=10)
+            surface.blit(text, text_rect)
+            
+            # Renderizar cost/damage
+            info_font = pygame.font.Font(None, 20)
+            cost_text = info_font.render(f"Cost: {card_data.get('cost', 0)}", True, (255, 255, 255))
+            surface.blit(cost_text, (5, height - 40))
+            
+            if "damage" in card_data:
+                dmg_text = info_font.render(f"Dmg: {card_data['damage']}", True, (255, 255, 255))
+                surface.blit(dmg_text, (5, height - 20))
+            elif "heal" in card_data:
+                heal_text = info_font.render(f"Heal: {card_data['heal']}", True, (255, 255, 255))
+                surface.blit(heal_text, (5, height - 20))
+        
+        return surface
+        
+    def discard_card(self, card: dict):
+        """P2-6: Descarta uma carta da mão."""
+        if card in self.player_hand:
+            self.player_hand.remove(card)
+            self._reorganize_hand()
+            logger.info(f"P2-6: Discarded {card['data']['name']}")
+            
+    def draw_card(self) -> bool:
+        """P2-6: Compra uma carta se há espaço na mão (máx 5)."""
+        if len(self.player_hand) >= 5:
+            logger.warning("P2-6: Cannot draw card - hand is full")
+            return False
+            
+        # Simular draw de carta aleatória
+        available_cards = [
             {"name": "Fireball", "cost": 3, "damage": 4, "type": "spell"},
             {"name": "Sword Strike", "cost": 2, "damage": 3, "type": "attack"},
             {"name": "Heal", "cost": 2, "heal": 3, "type": "heal"},
@@ -535,34 +662,16 @@ class CombatScreen:
             {"name": "Shield Block", "cost": 1, "defense": 2, "type": "defense"}
         ]
         
-        # Converter para objetos de carta simples
-        slot_width = self.player_hand_zone.width // 5
-        slot_height = self.player_hand_zone.height - 20
+        import random
+        new_card = random.choice(available_cards)
+        self._add_card_to_hand(new_card, len(self.player_hand))
         
-        for i, card_data in enumerate(demo_cards):
-            slot_x = self.player_hand_zone.left + i * slot_width + 10
-            slot_y = self.player_hand_zone.top + 10
-            
-            card = {
-                "data": card_data,
-                "rect": pygame.Rect(slot_x, slot_y, slot_width - 20, slot_height),
-                "original_pos": (slot_x, slot_y),
-                "is_hovered": False,
-                "is_selected": False,
-                "slot_index": i,
-                # P1: Propriedades de animação
-                "hover_offset_y": 0,
-                "target_hover_y": 0,
-                "scale": 1.0,
-                "target_scale": 1.0,
-                "glow_alpha": 0,
-                "target_glow_alpha": 0,
-                "rotation": 0,
-                "target_rotation": 0,
-                "animation_time": 0,
-                "bob_offset": i * 0.5  # Offset para efeito de "breathing" assíncrono
-            }
-            self.player_hand.append(card)
+        logger.info(f"P2-6: Drew {new_card['name']} (hand size: {len(self.player_hand)})")
+        return True
+        
+    def end_turn_draw(self):
+        """P2-6: Compra carta no final do turno se há espaço."""
+        self.draw_card()
         
     def _setup_particles(self):
         """Configura o sistema de partículas."""
@@ -748,6 +857,10 @@ class CombatScreen:
         
         # Atualizar sistema de animações
         animation_manager.update(dt)
+        
+        # P2: Atualizar animation manager integrado
+        if hasattr(self, 'animation_manager'):
+            self.animation_manager.update(dt)
         
         # Atualizar botões
         if hasattr(self, 'end_turn_button'):
@@ -958,16 +1071,16 @@ class CombatScreen:
     def _use_card_with_target(self, target_slot: CombatSlot):
         """Usa carta com alvo específico."""
         if self.selected_card and self.targeted_enemy:
-            # Disparar partículas de dano no alvo
-            self._trigger_damage_particles(target_slot.rect.center)
+            # P2: Disparar partículas de ataque no alvo
+            self._trigger_attack_particles(target_slot.rect.center)
             
-            # Trigger animação de ataque do jogador
-            animation_manager.play_animation("knight", "attack", force_restart=True)
+            # P2: Trigger animação de ataque do jogador
+            self.animation_manager.play_animation("knight", "attack", force_restart=True)
             
-            # Trigger animação de hurt do inimigo alvo
+            # P2: Trigger animação de hurt do inimigo alvo
             target_index = self.combat_engine.enemies.index(self.targeted_enemy)
             enemy_anim_id = f"{self._get_enemy_anim_id(self.targeted_enemy)}_{target_index}"
-            animation_manager.play_animation(enemy_anim_id, "hurt", force_restart=True)
+            self.animation_manager.play_animation(enemy_anim_id, "hurt", force_restart=True)
             
             # Aplicar efeito da carta
             self._apply_card_effect(self.selected_card, self.targeted_enemy)
@@ -996,6 +1109,25 @@ class CombatScreen:
         """Dispara partículas de dano na posição especificada."""
         self.damage_emitter.position = position
         self.particle_system.add_emitter(self.damage_emitter)
+        
+    def _trigger_attack_particles(self, position: Tuple[int, int]):
+        """P2: Dispara partículas de ataque com efeitos aprimorados."""
+        if hasattr(self, 'particle_system'):
+            # Usar o novo sistema P2 de partículas
+            self.particle_system.emit_impact(position)
+            self.particle_system.emit_damage(position)
+        else:
+            # Fallback para sistema antigo
+            self._trigger_damage_particles(position)
+            
+    def _get_enemy_anim_id(self, enemy) -> str:
+        """P2: Retorna ID de animação baseado no tipo do inimigo."""
+        if hasattr(enemy, 'enemy_type'):
+            return enemy.enemy_type.lower()
+        elif hasattr(enemy, 'type'):
+            return enemy.type.lower()
+        else:
+            return "goblin"  # Fallback padrão
         
     def _cancel_card_selection(self):
         """Cancela seleção de carta."""
@@ -1108,6 +1240,13 @@ class CombatScreen:
             enemy = target["enemy"]
             logger.info(f"Using {card['data']['name']} on {enemy}")
             
+            # P2: Trigger animação de ataque do jogador
+            self.animation_manager.play_animation("knight", "attack", force_restart=True)
+            
+            # P2: Trigger animação de hurt do inimigo alvo
+            enemy_anim_id = f"{self._get_enemy_anim_id(enemy)}_{target['index']}"
+            self.animation_manager.play_animation(enemy_anim_id, "hurt", force_restart=True)
+            
             # Simular efeito da carta (implementação simples para P1)
             if card["data"]["type"] == "spell" or card["data"]["type"] == "attack":
                 damage = card["data"].get("damage", 1)
@@ -1118,9 +1257,9 @@ class CombatScreen:
             # Remover carta da mão
             self._remove_card_from_hand(card)
             
-            # Trigger efeitos visuais
+            # P2: Trigger efeitos visuais com partículas P2
             enemy_pos = self._get_enemy_screen_position(target["index"])
-            self._trigger_damage_particles(enemy_pos)
+            self._trigger_attack_particles(enemy_pos)
             
         except Exception as e:
             logger.error(f"Error using card on enemy: {e}")
@@ -1182,46 +1321,63 @@ class CombatScreen:
                 logger.debug(f"Hovering: {card['data']['name']}")
                 
     def _update_card_animations(self, dt: float):
-        """P1: Atualiza animações avançadas das cartas."""
+        """P2: Atualiza animações avançadas das cartas com CardSprite system."""
         import math
         
         for card in self.player_hand:
-            # Atualizar timer de animação
-            card["animation_time"] += dt
-            
-            # Definir targets de animação baseados no estado
-            if card["is_hovered"] and not self.is_dragging:
-                card["target_hover_y"] = -20  # Subir mais quando hover
-                card["target_scale"] = 1.1    # Crescer um pouco
-                card["target_glow_alpha"] = 150
-                card["target_rotation"] = 2   # Leve rotação
-            elif card["is_selected"]:
-                card["target_hover_y"] = -10
-                card["target_scale"] = 1.05
-                card["target_glow_alpha"] = 100
-                card["target_rotation"] = 1
+            # P2: Usar CardSprite se disponível
+            if hasattr(card, 'sprite') and card['sprite']:
+                # CardSprite handle suas próprias animações
+                card['sprite'].update(dt)
+                
+                # Sync position from CardSprite back to card rect
+                card["rect"] = card['sprite'].rect
             else:
-                card["target_hover_y"] = 0
-                card["target_scale"] = 1.0
-                card["target_glow_alpha"] = 0
-                card["target_rotation"] = 0
+                # Fallback para sistema antigo melhorado
+                card["animation_time"] += dt
                 
-            # Aplicar interpolação suave (easing)
-            ease_speed = 8.0
-            card["hover_offset_y"] += (card["target_hover_y"] - card["hover_offset_y"]) * dt * ease_speed
-            card["scale"] += (card["target_scale"] - card["scale"]) * dt * ease_speed
-            card["glow_alpha"] += (card["target_glow_alpha"] - card["glow_alpha"]) * dt * ease_speed
-            card["rotation"] += (card["target_rotation"] - card["rotation"]) * dt * ease_speed
-            
-            # Efeito de "breathing" sutil quando não está hover/selected
-            if not card["is_hovered"] and not card["is_selected"]:
-                breathing_intensity = 2
-                bob_speed = 1.5
-                card["hover_offset_y"] += math.sin(card["animation_time"] * bob_speed + card["bob_offset"]) * breathing_intensity
+                # P2: Efeitos de hover aprimorados
+                if card["is_hovered"] and not self.is_dragging:
+                    card["target_hover_y"] = -25  # P2: Hover mais pronunciado
+                    card["target_scale"] = 1.15   # P2: Scale maior
+                    card["target_glow_alpha"] = 200  # P2: Glow mais forte
+                    card["target_rotation"] = 3   # P2: Rotação mais visível
+                elif card["is_selected"]:
+                    card["target_hover_y"] = -15
+                    card["target_scale"] = 1.08
+                    card["target_glow_alpha"] = 120
+                    card["target_rotation"] = 1.5
+                else:
+                    card["target_hover_y"] = 0
+                    card["target_scale"] = 1.0
+                    card["target_glow_alpha"] = 0
+                    card["target_rotation"] = 0
+                    
+                # P2: Interpolação mais suave
+                ease_speed = 10.0  # P2: Mais responsivo
+                card["hover_offset_y"] += (card["target_hover_y"] - card["hover_offset_y"]) * dt * ease_speed
+                card["scale"] += (card["target_scale"] - card["scale"]) * dt * ease_speed
+                card["glow_alpha"] += (card["target_glow_alpha"] - card["glow_alpha"]) * dt * ease_speed
+                card["rotation"] += (card["target_rotation"] - card["rotation"]) * dt * ease_speed
                 
-            # Atualizar posição do rect com offset
-            card["rect"].x = card["original_pos"][0]
-            card["rect"].y = card["original_pos"][1] + int(card["hover_offset_y"])
+                # P2: Efeito de "pulsing" mais sutil quando idle
+                if not card["is_hovered"] and not card["is_selected"]:
+                    # P2: Pulsing senoidal como especificado
+                    pulse_intensity = 3
+                    pulse_speed = 2.0
+                    time_offset = card["bob_offset"]
+                    pulse_offset = math.sin((card["animation_time"] + time_offset) * pulse_speed) * pulse_intensity
+                    card["hover_offset_y"] += pulse_offset
+                    
+                # P2: Animação de draw para cartas novas
+                if card.get("draw_animation", False):
+                    card["draw_progress"] = min(1.0, card["draw_progress"] + dt * 3.0)
+                    if card["draw_progress"] >= 1.0:
+                        card["draw_animation"] = False
+                        
+                # Atualizar posição do rect com offset
+                card["rect"].x = card["original_pos"][0]
+                card["rect"].y = card["original_pos"][1] + int(card["hover_offset_y"])
                 
     def _reset_drag_state(self):
         """Reseta o estado de drag & drop."""

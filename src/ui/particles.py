@@ -1,11 +1,12 @@
 """
-Sistema de partículas para efeitos visuais medievais.
+Sistema de partículas para efeitos visuais medievais - Enhanced for P2 Sprint.
 
 Implementa efeitos sutis como:
 - Pó mágico flutuante (wizard screen)
 - Faíscas douradas (hover em botões)
 - Névoas dissipantes (assassin screen)
 - Partículas de fogo (knight screen)
+- P2: Combat sparks, damage effects, impact particles
 """
 
 import pygame
@@ -13,6 +14,7 @@ import random
 import math
 from typing import List, Tuple, Optional
 from enum import Enum
+from dataclasses import dataclass
 
 from ..ui.theme import theme
 
@@ -25,25 +27,90 @@ class ParticleType(Enum):
     FIRE_EMBERS = "fire_embers"
     SNOW = "snow"
     LEAVES = "leaves"
+    # P2 additions
+    DAMAGE_SPARKS = "damage_sparks"
+    IMPACT_BURST = "impact_burst"
+    HEAL_GLOW = "heal_glow"
+
+
+@dataclass
+class ParticleConfig:
+    """P2: Configuration for particle types."""
+    velocity_range: Tuple[Tuple[float, float], Tuple[float, float]]  # ((min_x, max_x), (min_y, max_y))
+    size_range: Tuple[float, float]
+    lifetime_range: Tuple[float, float]
+    color: Tuple[int, int, int, int]  # RGBA
+    gravity: float = 0.0
+    fade_rate: float = 1.0
+
+
+# P2: Enhanced particle configurations
+PARTICLE_CONFIGS = {
+    ParticleType.MAGIC_DUST: ParticleConfig(
+        velocity_range=((-0.5, 0.5), (-2.0, -0.5)),
+        size_range=(1, 3),
+        lifetime_range=(3.0, 6.0),
+        color=(200, 150, 255, 180),
+        gravity=0.0
+    ),
+    ParticleType.DAMAGE_SPARKS: ParticleConfig(
+        velocity_range=((-50, 50), (-80, -20)),
+        size_range=(2, 4),
+        lifetime_range=(0.3, 0.8),
+        color=(255, 200, 50, 255),
+        gravity=100.0,
+        fade_rate=2.0
+    ),
+    ParticleType.IMPACT_BURST: ParticleConfig(
+        velocity_range=((-100, 100), (-100, 100)),
+        size_range=(3, 6),
+        lifetime_range=(0.2, 0.5),
+        color=(255, 150, 50, 255),
+        gravity=80.0,
+        fade_rate=3.0
+    ),
+    ParticleType.HEAL_GLOW: ParticleConfig(
+        velocity_range=((-20, 20), (-40, -10)),
+        size_range=(2, 5),
+        lifetime_range=(1.0, 2.0),
+        color=(100, 255, 150, 200),
+        gravity=-30.0,  # Float upward
+        fade_rate=1.0
+    )
+}
 
 
 class Particle:
-    """Representa uma partícula individual."""
+    """Representa uma partícula individual - Enhanced for P2."""
     
     def __init__(self, x: float, y: float, particle_type: ParticleType):
         self.x = x
         self.y = y
         self.type = particle_type
         
-        # Propriedades baseadas no tipo
-        self._setup_properties()
+        # Get configuration for this particle type
+        config = PARTICLE_CONFIGS.get(particle_type)
+        if config:
+            # Use P2 configuration system
+            vel_x_range, vel_y_range = config.velocity_range
+            self.velocity_x = random.uniform(*vel_x_range)
+            self.velocity_y = random.uniform(*vel_y_range)
+            self.size = random.uniform(*config.size_range)
+            self.lifetime = random.uniform(*config.lifetime_range)
+            self.color = list(config.color)  # Make mutable for alpha changes
+            self.gravity = config.gravity
+            self.fade_rate = config.fade_rate
+        else:
+            # Fallback to legacy setup
+            self._setup_properties()
         
-        # Estado
+        # State
         self.age = 0.0
+        self.max_lifetime = self.lifetime
         self.is_alive = True
     
     def _setup_properties(self):
-        """Configura propriedades baseadas no tipo de partícula."""
+        """Configura propriedades baseadas no tipo de partícula (legacy)."""
         if self.type == ParticleType.MAGIC_DUST:
             self.velocity_x = random.uniform(-0.5, 0.5)
             self.velocity_y = random.uniform(-2.0, -0.5)
@@ -116,7 +183,7 @@ class Particle:
     
     def update(self, dt: float):
         """
-        Atualiza partícula.
+        Atualiza partícula - Enhanced for P2.
         
         Args:
             dt: Delta time em segundos
@@ -124,21 +191,58 @@ class Particle:
         if not self.is_alive:
             return
         
-        # Atualiza posição
-        self.x += self.velocity_x * dt * 60  # 60 FPS base
-        self.y += self.velocity_y * dt * 60
+        # P2: Enhanced physics update
+        self.x += self.velocity_x * dt
+        self.y += self.velocity_y * dt
         
-        # Atualiza idade
+        # Apply gravity if present (P2 feature)
+        if hasattr(self, 'gravity'):
+            self.velocity_y += self.gravity * dt
+        
+        # Update age and lifetime
         self.age += dt
         
-        # Fade out baseado na idade
-        life_ratio = self.age / self.lifetime
-        if life_ratio > 0.7:  # Começa a desvanecer aos 70% da vida
-            fade_progress = (life_ratio - 0.7) / 0.3
-            self.alpha = int(self.original_alpha * (1.0 - fade_progress))
+        # P2: Enhanced fade system
+        if hasattr(self, 'max_lifetime'):
+            life_ratio = self.age / self.max_lifetime
+            
+            # Apply fade rate (P2)
+            fade_rate = getattr(self, 'fade_rate', 1.0)
+            if life_ratio > 0.5:  # Start fading at 50% lifetime
+                fade_progress = (life_ratio - 0.5) / 0.5
+                alpha_multiplier = 1.0 - (fade_progress * fade_rate)
+                self.color[3] = int(self.color[3] * max(0, alpha_multiplier))
+            
+            # Check if particle should die
+            if self.age >= self.max_lifetime or self.color[3] <= 0:
+                self.is_alive = False
+                return
+        else:
+            # Legacy fade system
+            life_ratio = self.age / self.lifetime
+            if life_ratio > 0.7:  # Começa a desvanecer aos 70% da vida
+                fade_progress = (life_ratio - 0.7) / 0.3
+                self.alpha = int(self.original_alpha * (1.0 - fade_progress))
         
-        # Efeitos especiais por tipo
-        if self.type == ParticleType.MAGIC_DUST:
+        # P2: Enhanced type-specific effects
+        if self.type == ParticleType.DAMAGE_SPARKS:
+            # Sparks twinkle and lose energy
+            self.velocity_x *= 0.95
+            self.velocity_y *= 0.95
+            if random.random() < 0.3:  # Twinkling effect
+                self.color[3] = max(0, self.color[3] - 30)
+                
+        elif self.type == ParticleType.IMPACT_BURST:
+            # Quick burst with rapid fade
+            self.velocity_x *= 0.9
+            self.velocity_y *= 0.9
+            
+        elif self.type == ParticleType.HEAL_GLOW:
+            # Gentle floating with slight oscillation
+            self.x += math.sin(self.age * 3) * 5 * dt
+            
+        # Legacy effects
+        elif self.type == ParticleType.MAGIC_DUST:
             # Movimento serpenteante
             self.x += math.sin(self.age * 2) * 0.5
             
@@ -187,7 +291,7 @@ class Particle:
 
 
 class ParticleEmitter:
-    """Emissor de partículas para uma região específica."""
+    """Emissor de partículas para uma região específica - Enhanced for P2."""
     
     def __init__(self,
                  x: float,
@@ -218,6 +322,10 @@ class ParticleEmitter:
         self.particles: List[Particle] = []
         self.last_emission = 0.0
         self.is_active = True
+        
+        # P2: Enhanced emission control
+        self.burst_mode = False
+        self.one_shot = False
     
     def set_position(self, x: float, y: float):
         """Atualiza posição do emissor."""
@@ -233,6 +341,27 @@ class ParticleEmitter:
         for _ in range(count):
             if len(self.particles) < self.max_particles:
                 self._create_particle()
+                
+    def emit_damage(self, count: int = 10):
+        """P2: Emit damage sparks effect."""
+        old_type = self.particle_type
+        self.particle_type = ParticleType.DAMAGE_SPARKS
+        self.emit_burst(count)
+        self.particle_type = old_type
+        
+    def emit_impact(self, count: int = 12):
+        """P2: Emit impact burst effect."""
+        old_type = self.particle_type
+        self.particle_type = ParticleType.IMPACT_BURST
+        self.emit_burst(count)
+        self.particle_type = old_type
+        
+    def emit_heal(self, count: int = 8):
+        """P2: Emit healing glow effect."""
+        old_type = self.particle_type
+        self.particle_type = ParticleType.HEAL_GLOW
+        self.emit_burst(count)
+        self.particle_type = old_type
     
     def _create_particle(self):
         """Cria nova partícula na área do emissor."""

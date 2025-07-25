@@ -1,13 +1,17 @@
 """
-Medieval Deck - Turn Engine Core
+Medieval Deck - Turn Engine Core - Enhanced for P2 Sprint
 
 Sistema de turnos principal do jogo, gerenciando o fluxo entre jogador e inimigos.
-Implementado conforme Fase 1 do roadmap.
+P2: Enhanced with minimal turn logic, damage calculation, and state management.
 """
 
 import logging
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, TYPE_CHECKING
 from enum import Enum
+
+if TYPE_CHECKING:
+    from ..gameplay.deck import Card
+    from ..enemies.smart_enemies import SmartEnemy
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +37,7 @@ class TurnPhase(Enum):
 
 class Player:
     """
-    Classe base para o jogador.
+    Classe base para o jogador - Enhanced for P2.
     
     Attributes:
         hp: Pontos de vida
@@ -419,3 +423,140 @@ class TurnEngine:
             "alive_enemies": len(self.get_alive_enemies()),
             "total_enemies": len(self.enemies)
         }
+    
+    # ===== P2 ENHANCED METHODS =====
+    
+    def player_turn_simple(self, card: 'Card', target_enemy: 'SmartEnemy') -> bool:
+        """
+        P2: Simplified player turn - play one card against enemy.
+        
+        Args:
+            card: Card to play
+            target_enemy: Enemy to target
+            
+        Returns:
+            True if turn was successful
+        """
+        if not card or not target_enemy or not target_enemy.is_alive:
+            return False
+            
+        try:
+            # Apply card damage to enemy
+            damage = getattr(card, 'damage', 0)
+            if damage > 0:
+                target_enemy.hp -= damage
+                logger.info(f"Player plays {card.name}: {damage} damage to {target_enemy.name}")
+                
+                # Check if enemy died
+                if target_enemy.hp <= 0:
+                    target_enemy.hp = 0
+                    logger.info(f"{target_enemy.name} defeated!")
+                    
+            # Apply card healing to player if it's a heal card
+            heal_amount = getattr(card, 'heal', 0)
+            if heal_amount > 0:
+                old_hp = self.player.hp
+                self.player.hp = min(self.player.max_hp, self.player.hp + heal_amount)
+                actual_heal = self.player.hp - old_hp
+                logger.info(f"Player heals for {actual_heal} HP")
+                
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error in player turn: {e}")
+            return False
+    
+    def enemy_turn_simple(self) -> None:
+        """
+        P2: Simplified enemy turn - each alive enemy attacks player.
+        """
+        alive_enemies = self.get_alive_enemies()
+        
+        for enemy in alive_enemies:
+            if not enemy.is_alive:
+                continue
+                
+            try:
+                # Basic enemy attack
+                base_damage = getattr(enemy, 'attack', 3)  # Default 3 damage
+                
+                # Apply damage to player
+                old_hp = self.player.hp
+                self.player.hp = max(0, self.player.hp - base_damage)
+                actual_damage = old_hp - self.player.hp
+                
+                logger.info(f"{enemy.name} attacks player for {actual_damage} damage")
+                
+                # Check if player died
+                if self.player.hp <= 0:
+                    self.player.hp = 0
+                    logger.info("Player defeated!")
+                    break
+                    
+            except Exception as e:
+                logger.error(f"Error in enemy turn for {enemy.name}: {e}")
+                
+    def apply_damage(self, target, damage: int) -> int:
+        """
+        P2: Apply damage to a target and return actual damage dealt.
+        
+        Args:
+            target: Target entity (player or enemy)
+            damage: Damage amount
+            
+        Returns:
+            Actual damage dealt
+        """
+        if damage <= 0:
+            return 0
+            
+        old_hp = target.hp
+        target.hp = max(0, target.hp - damage)
+        actual_damage = old_hp - target.hp
+        
+        logger.debug(f"Applied {actual_damage} damage to {getattr(target, 'name', 'target')}")
+        return actual_damage
+        
+    def apply_healing(self, target, heal_amount: int) -> int:
+        """
+        P2: Apply healing to a target and return actual healing done.
+        
+        Args:
+            target: Target entity (usually player)
+            heal_amount: Healing amount
+            
+        Returns:
+            Actual healing done
+        """
+        if heal_amount <= 0:
+            return 0
+            
+        old_hp = target.hp
+        max_hp = getattr(target, 'max_hp', target.hp)
+        target.hp = min(max_hp, target.hp + heal_amount)
+        actual_heal = target.hp - old_hp
+        
+        logger.debug(f"Applied {actual_heal} healing to {getattr(target, 'name', 'target')}")
+        return actual_heal
+        
+    def end_turn(self) -> None:
+        """
+        P2: End current turn and advance to next phase.
+        """
+        if self.game_state == GameState.PLAYER_TURN:
+            # Switch to enemy turn
+            self.game_state = GameState.ENEMY_TURN
+            logger.info("Player turn ended, switching to enemy turn")
+            
+        elif self.game_state == GameState.ENEMY_TURN:
+            # Switch to player turn
+            self.game_state = GameState.PLAYER_TURN
+            self.turn_count += 1
+            logger.info(f"Enemy turn ended, starting player turn {self.turn_count}")
+            
+            # Refresh player mana for new turn
+            self.player.mana = self.player.max_mana
+    
+    def is_game_over(self) -> bool:
+        """P2: Quick check if game is over."""
+        return self.check_end() is not None
