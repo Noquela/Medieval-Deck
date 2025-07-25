@@ -23,6 +23,10 @@ from .cinematic_character_screen import CinematicCharacterSelectionScreen
 from .character_screens import CharacterScreenManager
 from .stats_screen import StatsScreen
 from .story_screen import StoryScreen
+from ..ui.combat_screen import CombatScreen
+from ..enemies.intelligent_combat import IntelligentCombatEngine
+from ..core.turn_engine import Player
+from ..gameplay.deck import DeckBuilder
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +40,7 @@ class UIState(Enum):
     CINEMATIC_CHARACTER_SELECTION = "cinematic_character_selection"
     CHARACTER_DETAIL = "character_detail"  # Nova tela individual de personagem
     GAME = "game"
+    COMBAT = "combat"
     DECK_BUILDER = "deck_builder"
     STATS = "stats"
     STORY = "story"
@@ -161,6 +166,9 @@ class GameUI:
                 self.asset_generator
             )
             
+            # Initialize combat screen
+            self.screens[UIState.COMBAT] = None  # Will be initialized when needed
+            
             # Other screens will be initialized when needed
             # self.screens[UIState.STATS] = StatsScreen(...)
             # self.screens[UIState.STORY] = StoryScreen(...)
@@ -225,6 +233,8 @@ class GameUI:
             self._confirm_character_selection()
         elif action == "back":
             self._transition_to_state(UIState.MENU)
+        elif action == "exit_combat":
+            self._transition_to_state(UIState.MENU)
         # Ações da tela cinematográfica
         elif action.startswith("select_"):
             character_id = action.replace("select_", "")
@@ -253,12 +263,44 @@ class GameUI:
         """
         logger.info(f"Personagem cinematográfico selecionado: {character_id}")
         
-        # TODO: Iniciar jogo com personagem selecionado
-        # Por enquanto, volta para o menu
-        self._transition_to_state(UIState.MENU)
+        # Inicializar tela de combate se ainda não foi criada
+        if self.screens[UIState.COMBAT] is None:
+            self._initialize_combat_screen(character_id)
         
-        # Mensagem para o usuário
+        # Transição para a tela de combate
+        self._transition_to_state(UIState.COMBAT)
+        
         logger.info(f"Jogo iniciado com {character_id}!")
+    
+    def _initialize_combat_screen(self, character_id: str) -> None:
+        """
+        Inicializa a tela de combate com o personagem selecionado.
+        
+        Args:
+            character_id: ID do personagem (knight, wizard, assassin)
+        """
+        try:
+            # Criar player baseado no personagem selecionado
+            player = Player(max_hp=30, max_mana=10)
+            
+            # Inicializar combat engine com player
+            combat_engine = IntelligentCombatEngine(
+                player=player,
+                encounter_type="goblin_patrol"
+            )
+            
+            # Criar a tela de combate
+            self.screens[UIState.COMBAT] = CombatScreen(
+                self.screen,
+                combat_engine
+            )
+            
+            logger.info(f"Combat screen initialized for character: {character_id}")
+            
+        except Exception as e:
+            logger.error(f"Failed to initialize combat screen: {e}")
+            # Fallback para o menu
+            self._transition_to_state(UIState.MENU)
             
     def _show_character_detail(self, character_type: str) -> None:
         """
@@ -391,6 +433,11 @@ class GameUI:
         if self.current_state == UIState.GAME:
             # TODO: Update game engine when game screen is implemented
             pass
+        elif self.current_state == UIState.COMBAT:
+            # Update combat screen
+            current_screen = self.screens.get(self.current_state)
+            if current_screen and hasattr(current_screen, 'update'):
+                current_screen.update(dt)
             
     def draw(self) -> None:
         """Draw current screen."""

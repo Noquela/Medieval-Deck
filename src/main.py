@@ -175,6 +175,12 @@ Examples:
         help="Run Intelligent Combat demo (Fase 3 implementation)"
     )
     
+    parser.add_argument(
+        "--demo-combat-ui",
+        action="store_true",
+        help="Run Combat UI demo (Fase 4 implementation)"
+    )
+    
     return parser
 
 
@@ -668,6 +674,18 @@ def main():
                 return 0 if result else 1
             except ImportError as e:
                 logging.error(f"Failed to import Intelligent Combat demo: {e}")
+                return 1
+                
+        # Se for executar demo da UI de Combate
+        if args.demo_combat_ui:
+            logging.info("Running Combat UI demo...")
+            try:
+                from demo_combat_ui import main as demo_combat_ui_main
+                result = demo_combat_ui_main()
+                logging.info("Combat UI demo completed.")
+                return 0 if result else 1
+            except ImportError as e:
+                logging.error(f"Failed to import Combat UI demo: {e}")
                 return 1
             
         # Initialize game engine

@@ -281,6 +281,39 @@ class ParticleEmitter:
         self.particles.clear()
 
 
+class ParticleSystem:
+    """
+    Sistema simplificado de partículas para a UI de combate.
+    """
+    
+    def __init__(self):
+        self.particles = []
+        
+    def create_impact_effect(self, x: float, y: float):
+        """Cria efeito de impacto na posição especificada."""
+        # Criar várias partículas de faísca dourada
+        for _ in range(random.randint(5, 10)):
+            particle = Particle(x, y, ParticleType.GOLDEN_SPARKS)
+            # Adicionar velocidade radial
+            angle = random.uniform(0, 2 * math.pi)
+            speed = random.uniform(20, 50)
+            particle.velocity_x = math.cos(angle) * speed
+            particle.velocity_y = math.sin(angle) * speed
+            self.particles.append(particle)
+            
+    def update(self, dt: float):
+        """Atualiza todas as partículas."""
+        for particle in self.particles[:]:  # Cópia da lista
+            particle.update(dt)
+            if not particle.is_alive:
+                self.particles.remove(particle)
+                
+    def draw(self, surface: pygame.Surface):
+        """Desenha todas as partículas."""
+        for particle in self.particles:
+            particle.draw(surface)
+
+
 class ParticleManager:
     """Gerenciador global de sistemas de partículas."""
     

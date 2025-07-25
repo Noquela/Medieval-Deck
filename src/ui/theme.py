@@ -44,6 +44,39 @@ class ColorPalette(NamedTuple):
     GLOW_GOLD: Tuple[int, int, int, int] = (255, 215, 0, 80)        # Brilho dourado
 
 
+class CombatUIColors:
+    """Cores específicas para a UI de combate."""
+    
+    # Background
+    background_color = ColorPalette.SHADOW_BLACK
+    
+    # Cartas
+    card_color = ColorPalette.STONE_MEDIUM
+    card_hover_color = ColorPalette.GOLD_DARK
+    card_selected_color = ColorPalette.GOLD_PRIMARY
+    
+    # Inimigos
+    enemy_slot_color = ColorPalette.BLOOD_RED
+    enemy_slot_hover_color = (180, 40, 40)  # Vermelho mais claro
+    enemy_slot_target_color = ColorPalette.GOLD_PRIMARY
+    
+    # Interface
+    button_color = ColorPalette.STONE_DARK
+    button_hover_color = ColorPalette.STONE_MEDIUM
+    button_disabled_color = (60, 60, 60)
+    
+    info_bg_color = (40, 40, 40)
+    
+    # Texto
+    text_color = ColorPalette.PARCHMENT
+    cost_color = ColorPalette.GOLD_LIGHT
+    cost_bg_color = ColorPalette.SHADOW_BLACK
+    mana_color = (100, 150, 255)  # Azul mana
+    
+    # Bordas
+    border_color = ColorPalette.GOLD_DARK
+
+
 class Typography:
     """Sistema de tipografia medieval."""
     
@@ -258,3 +291,71 @@ def create_glow_surface(size: Tuple[int, int],
         pygame.draw.circle(surface, glow_color, (center_x, center_y), radius)
     
     return surface
+
+
+class UITheme:
+    """
+    Tema principal da interface de usuário.
+    Centraliza todas as configurações visuais do jogo.
+    """
+    
+    def __init__(self):
+        """Inicializa o tema da UI."""
+        # Cores do combate
+        self.background_color = CombatUIColors.background_color
+        
+        # Cartas
+        self.card_color = CombatUIColors.card_color
+        self.card_hover_color = CombatUIColors.card_hover_color
+        self.card_selected_color = CombatUIColors.card_selected_color
+        
+        # Inimigos
+        self.enemy_slot_color = CombatUIColors.enemy_slot_color
+        self.enemy_slot_hover_color = CombatUIColors.enemy_slot_hover_color
+        self.enemy_slot_target_color = CombatUIColors.enemy_slot_target_color
+        
+        # Botões
+        self.button_color = CombatUIColors.button_color
+        self.button_hover_color = CombatUIColors.button_hover_color
+        self.button_disabled_color = CombatUIColors.button_disabled_color
+        
+        # Interface
+        self.info_bg_color = CombatUIColors.info_bg_color
+        self.border_color = CombatUIColors.border_color
+        
+        # Texto
+        self.text_color = CombatUIColors.text_color
+        self.cost_color = CombatUIColors.cost_color
+        self.cost_bg_color = CombatUIColors.cost_bg_color
+        self.mana_color = CombatUIColors.mana_color
+        
+        # Tipografia
+        self.typography = Typography()
+        
+        # Espaçamentos e offsets
+        class _Spacing:
+            """Offsets e espaçamentos usados nos componentes de UI."""
+            SHADOW_OFFSET_SMALL = 2
+            SHADOW_OFFSET_MEDIUM = 5
+            SHADOW_OFFSET_LARGE = 10
+            PADDING_SMALL = 4
+            PADDING_MEDIUM = 8
+            PADDING_LARGE = 16
+            MARGIN_SMALL = 5
+            MARGIN_MEDIUM = 10
+            MARGIN_LARGE = 20
+        
+        self.spacing = _Spacing()
+        
+        # Paleta de cores completa
+        self.colors = ColorPalette()
+        
+        # Configurações de efeitos visuais
+        self.enable_particles = True
+        self.enable_glow_effects = True
+        self.enable_shadows = True
+        self.animation_quality = "high"  # "low", "medium", "high"
+
+
+# Instância global do tema
+theme = UITheme()
