@@ -223,7 +223,45 @@ class CharacterSelectionScreen:
     
     def _load_initial_assets(self):
         """Carrega assets iniciais (fundo e retrato do personagem atual)."""
+        # Carregar background principal da tela de seleção melhorado
+        self._load_selection_background()
+        
+        # Carregar assets do personagem atual
         self._load_character_assets(self.current_character)
+    
+    def _load_selection_background(self):
+        """Carrega o background principal melhorado da tela de seleção."""
+        try:
+            # Tentar carregar o novo background melhorado da tela de seleção
+            selection_bg_path = self.config.assets_generated_dir / "character_selection_bg.png"
+            
+            if selection_bg_path.exists():
+                logger.info(f"🎨 Carregando background melhorado da seleção: {selection_bg_path}")
+                # Carregar background melhorado diretamente
+                self.selection_background = pygame.image.load(str(selection_bg_path)).convert()
+                
+                # Redimensionar para resolução da tela se necessário
+                screen_size = (self.screen.get_width(), self.screen.get_height())
+                if self.selection_background.get_size() != screen_size:
+                    self.selection_background = pygame.transform.scale(
+                        self.selection_background, screen_size
+                    )
+                
+                # Aplicar overlay sutil para melhorar legibilidade
+                overlay = pygame.Surface(screen_size)
+                overlay.set_alpha(40)  # Overlay bem sutil
+                overlay.fill((0, 0, 0))
+                self.selection_background.blit(overlay, (0, 0))
+                
+                logger.info("✅ Background melhorado da seleção carregado com sucesso")
+                return
+                
+        except Exception as e:
+            logger.warning(f"⚠️ Erro ao carregar background melhorado da seleção: {e}")
+        
+        # Fallback: sem background específico da seleção
+        self.selection_background = None
+        logger.info("⚪ Usando backgrounds individuais dos personagens")
     
     def _load_character_assets(self, character: Dict[str, Any]):
         """
@@ -487,16 +525,16 @@ class CharacterSelectionScreen:
     def draw(self) -> None:
         """Desenha a tela de seleção de personagens."""
         
-        # Desenhar fundo do personagem atual
+        # Usar sempre o background específico do personagem atual
         current_bg = self.character_backgrounds.get(self.current_character["id"])
         
         if current_bg:
             self.screen.blit(current_bg, (0, 0))
-            logger.debug(f"Background desenhado para {self.current_character['name']}")
+            logger.debug(f"🎨 Background específico desenhado para {self.current_character['name']}")
         else:
             logger.warning(f"❌ Background não encontrado para {self.current_character['name']} (ID: {self.current_character['id']})")
             logger.info(f"🗂️ Backgrounds disponíveis: {list(self.character_backgrounds.keys())}")
-            # ONLY fill screen if no background found
+            # Fallback: usar cor temática do personagem
             self.screen.fill(self.current_character["theme_colors"]["background"])
         
         # Desenhar retrato do personagem

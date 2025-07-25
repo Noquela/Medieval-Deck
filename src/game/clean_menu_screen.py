@@ -77,16 +77,53 @@ class CleanMenuScreen:
     
     def _load_assets(self):
         """Carrega assets IA para o menu."""
-        # Background do menu
-        menu_bg = get_asset("menu_bg")
-        if menu_bg and parallax_bg:
-            parallax_bg.set_background("menu_bg")
-            logger.info("Background do menu carregado")
-        else:
-            if not menu_bg:
-                logger.warning("Background do menu não encontrado")
-            if not parallax_bg:
-                logger.warning("ParallaxBackground não está inicializado")
+        # Tentar carregar o novo background melhorado primeiro
+        from pathlib import Path
+        from ..utils.asset_loader import asset_loader
+        
+        try:
+            # Verificar se existe o novo background melhorado
+            main_menu_bg_path = Path("assets/generated/main_menu_bg.png")
+            
+            if main_menu_bg_path.exists():
+                logger.info(f"🎨 Carregando background melhorado: {main_menu_bg_path}")
+                # Carregar background melhorado diretamente
+                main_menu_surface = pygame.image.load(str(main_menu_bg_path)).convert()
+                
+                # Redimensionar se necessário
+                if main_menu_surface.get_size() != (self.screen_width, self.screen_height):
+                    main_menu_surface = pygame.transform.scale(
+                        main_menu_surface, (self.screen_width, self.screen_height)
+                    )
+                
+                # Aplicar ao sistema de parallax se disponível
+                if parallax_bg:
+                    # Criar um asset temporário no loader para o parallax
+                    if hasattr(asset_loader, 'assets'):
+                        asset_loader.assets["main_menu_bg"] = type('AssetInfo', (), {
+                            'surface': main_menu_surface,
+                            'name': 'main_menu_bg'
+                        })()
+                    parallax_bg.set_background("main_menu_bg")
+                    logger.info("✅ Background melhorado carregado no parallax")
+                else:
+                    # Armazenar para uso direto
+                    self.menu_background = main_menu_surface
+                    logger.info("✅ Background melhorado carregado diretamente")
+                    
+        except Exception as e:
+            logger.warning(f"⚠️ Erro ao carregar background melhorado: {e}")
+            
+            # Fallback para o sistema antigo
+            menu_bg = get_asset("menu_bg")
+            if menu_bg and parallax_bg:
+                parallax_bg.set_background("menu_bg")
+                logger.info("Background do menu carregado (fallback)")
+            else:
+                if not menu_bg:
+                    logger.warning("Background do menu não encontrado")
+                if not parallax_bg:
+                    logger.warning("ParallaxBackground não está inicializado")
         
         # Configurar partículas neutras
         if atmospheric_particles:

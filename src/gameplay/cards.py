@@ -545,3 +545,131 @@ def shield_buff_effect(player, targets: List[Any], defense_bonus: int) -> bool:
         logger.info(f"Shield increases defense by {defense_bonus}")
         return True
     return False
+
+
+class Deck:
+    """
+    Classe para gerenciar um deck de cartas.
+    
+    Funcionalidades:
+    - Armazenar cartas do deck
+    - Embaralhar e distribuir cartas
+    - Validar deck (tamanho, cartas válidas)
+    """
+    
+    def __init__(self, cards: List[Card] = None):
+        """
+        Inicializa um deck.
+        
+        Args:
+            cards: Lista de cartas do deck
+        """
+        self.cards = cards if cards is not None else []
+        self.original_cards = self.cards.copy()
+        
+    def add_card(self, card: Card):
+        """Adiciona uma carta ao deck."""
+        self.cards.append(card)
+        
+    def remove_card(self, card: Card):
+        """Remove uma carta do deck."""
+        if card in self.cards:
+            self.cards.remove(card)
+            
+    def shuffle(self):
+        """Embaralha as cartas do deck."""
+        import random
+        random.shuffle(self.cards)
+        
+    def draw_card(self) -> Optional[Card]:
+        """
+        Compra uma carta do deck.
+        
+        Returns:
+            Carta comprada ou None se deck vazio
+        """
+        if self.cards:
+            return self.cards.pop(0)
+        return None
+        
+    def draw_hand(self, hand_size: int = 5) -> List[Card]:
+        """
+        Compra uma mão inicial.
+        
+        Args:
+            hand_size: Tamanho da mão
+            
+        Returns:
+            Lista de cartas da mão
+        """
+        hand = []
+        for _ in range(min(hand_size, len(self.cards))):
+            card = self.draw_card()
+            if card:
+                hand.append(card)
+        return hand
+        
+    def reset(self):
+        """Restaura o deck ao estado original."""
+        self.cards = self.original_cards.copy()
+        
+    def is_valid(self) -> bool:
+        """
+        Verifica se o deck é válido.
+        
+        Returns:
+            True se válido, False caso contrário
+        """
+        # Regras básicas de validação
+        min_cards = 15
+        max_cards = 30
+        
+        if len(self.cards) < min_cards or len(self.cards) > max_cards:
+            return False
+            
+        # Verificar se todas as cartas são válidas
+        for card in self.cards:
+            if not isinstance(card, Card):
+                return False
+                
+        return True
+        
+    def get_stats(self) -> Dict[str, int]:
+        """
+        Retorna estatísticas do deck.
+        
+        Returns:
+            Dicionário com estatísticas
+        """
+        stats = {
+            'total_cards': len(self.cards),
+            'creatures': 0,
+            'spells': 0,
+            'artifacts': 0,
+            'total_cost': 0,
+            'avg_cost': 0
+        }
+        
+        for card in self.cards:
+            if card.card_type == CardType.CREATURE:
+                stats['creatures'] += 1
+            elif card.card_type == CardType.SPELL:
+                stats['spells'] += 1
+            elif card.card_type == CardType.ARTIFACT:
+                stats['artifacts'] += 1
+                
+            stats['total_cost'] += card.cost
+            
+        if stats['total_cards'] > 0:
+            stats['avg_cost'] = stats['total_cost'] / stats['total_cards']
+            
+        return stats
+        
+    def __len__(self) -> int:
+        """Retorna número de cartas no deck."""
+        return len(self.cards)
+        
+    def __str__(self) -> str:
+        """Representação string do deck."""
+        stats = self.get_stats()
+        return f"Deck({stats['total_cards']} cards, avg cost: {stats['avg_cost']:.1f})"

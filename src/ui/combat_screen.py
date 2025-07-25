@@ -19,10 +19,14 @@ from ..gameplay.gameplay_engine import GameplayEngine
 from ..enemies.smart_enemies import SmartEnemy
 from ..enemies.intelligent_combat import IntelligentCombatEngine
 from ..ui.theme import UITheme, theme
-from ..ui.animation import AnimationManager, animation_manager, EasingType
+from ..ui.animation import AnimationManager, EasingType
 from ..ui.particles import ParticleSystem, ParticleEmitter, ParticleType
+from ..ui.helpers import fit_height, fit_width, create_gradient_surface, draw_outlined_text, apply_glow_effect
 from ..components.button import Button
 from ..generators.asset_generator import AssetGenerator
+from ..utils.asset_loader import load_ia_assets
+from ..gameplay.animation import animation_manager
+from ..utils.sprite_loader import load_character_animations, scale_animation_frames
 
 logger = logging.getLogger(__name__)
 
@@ -190,6 +194,7 @@ class CombatScreen:
         
         # Inicialização dos componentes
         self._load_ia_assets()
+        self._load_sprite_animations()
         self._setup_zones()
         self._setup_buttons()
         self._setup_particles()
@@ -204,133 +209,281 @@ class CombatScreen:
         logger.info("Professional CombatScreen initialized")
         
     def _load_ia_assets(self):
-        """Carrega todos os assets gerados por IA para a interface."""
-        assets_dir = Path("assets/ia")
-        
-        # Lista de assets necessários
-        asset_files = [
-            "battlefield_background.png",
-            "zone_panel_texture.png", 
-            "zone_border_texture.png",
-            "hp_bar_texture.png",
-            "mana_bar_texture.png",
-            "icon_card.png",
-            "icon_pause.png",
-            "button_idle.png",
-            "button_hover.png", 
-            "button_pressed.png",
-            "panel_shadow.png"
-        ]
-        
-        for asset_file in asset_files:
-            asset_path = assets_dir / asset_file
-            if asset_path.exists():
-                try:
-                    self.assets[asset_file.replace('.png', '')] = pygame.image.load(asset_path)
-                    logger.debug(f"Loaded IA asset: {asset_file}")
-                except pygame.error as e:
-                    logger.warning(f"Failed to load IA asset {asset_file}: {e}")
+        """Carrega todos os assets gerados por IA usando o AssetLoader."""
+        try:
+            # Usar a função automática do AssetLoader
+            self.assets.update(load_ia_assets("assets/ia"))
+            
+            # Escalar background para o tamanho da tela
+            if "combat_bg" in self.assets:
+                self.background = pygame.transform.smoothscale(
+                    self.assets["combat_bg"], 
+                    self.screen.get_size()
+                )
             else:
-                # Gerar asset com IA se não existir
-                self._generate_missing_asset(asset_file)
+                # Criar background fallback se não existir
+                self.background = create_gradient_surface(
+                    self.screen.get_size(),
+                    (40, 35, 25),    # Marrom escuro medieval no topo
+                    (20, 15, 10),    # Marrom mais escuro na base
+                    255
+                )
+            
+            # Assets principais que precisamos
+            required_assets = [
+                "combat_bg",  # Background de combate épico
+                "player_sprite",  # Sprite do jogador
+                "goblin_scout_sprite", "orc_berserker_sprite",  # Sprites de inimigos
+                "skeleton_archer_sprite", "dark_mage_sprite",
+                "button_idle", "button_hover", "button_pressed",
+                "icon_arrow_left", "icon_arrow_right"
+            ]
+            
+            # Verificar assets carregados
+            loaded_count = 0
+            for asset_name in required_assets:
+                if asset_name in self.assets:
+                    loaded_count += 1
+                    logger.debug(f"✅ Asset carregado: {asset_name}")
+                else:
+                    logger.warning(f"❌ Asset faltando: {asset_name}")
+            
+            logger.info(f"Assets IA carregados: {loaded_count}/{len(required_assets)} ({len(self.assets)} total)")
+            
+            # Configurar background de combate
+            if "combat_bg" in self.assets:
+                self.background_surface = self.assets["combat_bg"]
+                logger.info("✅ Background de combate configurado")
+            
+            # Configurar sprites de inimigos
+            self.enemy_sprites = {}
+            for asset_name in self.assets:
+                if asset_name.endswith('_sprite') and asset_name != 'player_sprite':
+                    enemy_id = asset_name.replace('_sprite', '')
+                    self.enemy_sprites[enemy_id] = self.assets[asset_name]
+                    logger.debug(f"✅ Enemy sprite: {enemy_id}")
+            
+            # Configurar sprite do jogador
+            if "player_sprite" in self.assets:
+                self.player_sprite = self.assets["player_sprite"]
+                logger.info("✅ Player sprite configurado")
+            
+        except Exception as e:
+            logger.error(f"Erro ao carregar assets IA: {e}")
+            # Fallback para assets padrão se necessário
     
-    def _generate_missing_asset(self, asset_name: str):
-        """Gera asset faltante usando IA."""
-        if not self.asset_generator:
-            logger.warning(f"Cannot generate {asset_name} - no AssetGenerator available")
+    def _load_sprite_animations(self):
+        """Carrega sprite sheets de animação para personagens."""
+        try:
+            # Lista de personagens para carregar
+            characters = ["knight", "goblin", "orc", "skeleton", "mage", "dragon"]
+            
+            # Carregar animações para cada personagem
+            loaded_count = 0
+            for char_id in characters:
+                if load_character_animations(char_id):
+                    loaded_count += 1
+                    
+                    # Escalar animações para tamanhos apropriados
+                    if char_id == "knight":  # Jogador
+                        target_height = int(self.height * 0.35)
+                        scale_animation_frames(char_id, "idle", target_height)
+                        scale_animation_frames(char_id, "attack", target_height)
+                        scale_animation_frames(char_id, "cast", target_height)
+                    else:  # Inimigos
+                        target_height = int(300 * 0.7)  # 70% da zona de inimigos
+                        scale_animation_frames(char_id, "idle", target_height)
+                        scale_animation_frames(char_id, "attack", target_height)
+                        scale_animation_frames(char_id, "hurt", target_height)
+                        
+            logger.info(f"✅ Animações carregadas: {loaded_count}/{len(characters)} personagens")
+            
+            # Inicializar animações dos personagens ativos
+            self._initialize_character_animations()
+            
+        except Exception as e:
+            logger.error(f"Erro ao carregar animações: {e}")
+            
+    def _initialize_character_animations(self):
+        """Inicializa animações para personagens ativos na batalha."""
+        try:
+            # Jogador sempre usa knight
+            animation_manager.play_animation("knight", "idle")
+            
+            # Inimigos baseados no combat engine
+            if hasattr(self.combat_engine, 'enemies'):
+                for i, enemy in enumerate(self.combat_engine.enemies):
+                    # Mapear tipo de inimigo para ID de animação
+                    enemy_type_mapping = {
+                        'goblin': 'goblin',
+                        'orc': 'orc',
+                        'skeleton': 'skeleton',
+                        'wizard': 'mage',
+                        'dragon': 'dragon'
+                    }
+                    
+                    # Converter enum para string
+                    if hasattr(enemy.enemy_type, 'value'):
+                        enemy_type_str = enemy.enemy_type.value.lower()
+                    elif hasattr(enemy.enemy_type, 'name'):
+                        enemy_type_str = enemy.enemy_type.name.lower()
+                    else:
+                        enemy_type_str = str(enemy.enemy_type).lower()
+                        
+                    # Usar mapeamento ou fallback para goblin
+                    anim_id = enemy_type_mapping.get(enemy_type_str, 'goblin')
+                    
+                    # Usar índice como ID único para múltiplos inimigos do mesmo tipo
+                    unique_id = f"{anim_id}_{i}"
+                    
+                    # Copiar animações do tipo base para ID único
+                    if anim_id in animation_manager.animations:
+                        for action, animation in animation_manager.animations[anim_id].items():
+                            animation_manager.add_animation(
+                                entity_id=unique_id,
+                                action=action,
+                                frames=animation.frames.copy(),
+                                fps=animation.fps,
+                                loop=animation.loop
+                            )
+                    
+                    # Iniciar animação idle
+                    animation_manager.play_animation(unique_id, "idle")
+                    
+        except Exception as e:
+            logger.error(f"Erro ao inicializar animações de personagens: {e}")
+    
+    def _setup_zones(self):
+        """Configura as zonas de combate seguindo as diretrizes de design."""
+        # Zona de inimigos (topo) - 50px de margem, altura 300px
+        self.enemy_zone = pygame.Rect(50, 30, self.width - 100, 300)
+        
+        # Zona da mão do jogador (base) - altura 190px
+        self.player_hand_zone = pygame.Rect(50, self.height - 220, self.width - 100, 190)
+        
+        # Cache dos sprites escalados
+        self.enemy_sprites = {}
+        self.player_sprite = None
+        
+        # Carregar e escalar sprites dos inimigos
+        self._load_and_scale_enemy_sprites()
+        
+        # Carregar e escalar sprite do jogador
+        self._load_and_scale_player_sprite()
+        
+    def _load_and_scale_enemy_sprites(self):
+        """Carrega e escala sprites melhorados dos inimigos para a zona apropriada."""
+        if not hasattr(self.combat_engine, 'enemies'):
             return
             
-        # Prompts específicos para cada tipo de asset
-        prompts = {
-            "battlefield_background.png": "battlefield at dawn, misty hills, medieval tents, dramatic lighting, cinematic",
-            "zone_panel_texture.png": "medieval wooden panel texture, ornate borders, aged wood",
-            "zone_border_texture.png": "ornate medieval border, gold filigree, decorative frame",
-            "hp_bar_texture.png": "red health bar texture, slightly scratched metal",
-            "mana_bar_texture.png": "blue mana bar texture, magical energy, glowing",
-            "icon_card.png": "medieval playing card icon, simple design, golden",
-            "icon_pause.png": "pause icon, medieval style, stone texture",
-            "button_idle.png": "medieval button texture, stone and gold, idle state",
-            "button_hover.png": "medieval button texture, stone and gold, glowing hover",
-            "button_pressed.png": "medieval button texture, stone and gold, pressed down",
-            "panel_shadow.png": "soft black shadow, transparent edges, drop shadow"
-        }
+        max_enemy_height = int(self.enemy_zone.height * 0.7)  # 70% da zona
         
-        if asset_name in prompts:
-            try:
-                # Gerar asset com prompts específicos
-                logger.info(f"Generating missing asset: {asset_name}")
-                # TODO: Implementar geração via asset_generator
-                # Por enquanto, criar placeholder
-                self._create_placeholder_asset(asset_name)
-            except Exception as e:
-                logger.error(f"Failed to generate {asset_name}: {e}")
-                self._create_placeholder_asset(asset_name)
-    
-    def _create_placeholder_asset(self, asset_name: str):
-        """Cria placeholder para asset faltante."""
-        # Criar surface placeholder baseado no tipo
-        if "background" in asset_name:
-            surface = pygame.Surface((self.width, self.height))
-            surface.fill((40, 30, 50))  # Cor placeholder escura
-        elif "icon" in asset_name:
-            surface = pygame.Surface((32, 32))
-            surface.fill((200, 200, 200))
-        else:
-            surface = pygame.Surface((100, 100))
-            surface.fill((100, 100, 100))
+        for i, enemy in enumerate(self.combat_engine.enemies):
+            # Mapear tipos de inimigo para sprites melhorados
+            enemy_type_mapping = {
+                'goblin': 'goblin_sprite_enhanced.png',
+                'orc': 'orc_sprite_enhanced.png', 
+                'skeleton': 'skeleton_sprite_enhanced.png',
+                'wizard': 'dark_mage_sprite_enhanced.png',
+                'dark_mage': 'dark_mage_sprite_enhanced.png',
+                'dragon': 'dragon_sprite_enhanced.png'
+            }
             
-        self.assets[asset_name.replace('.png', '')] = surface
+            # Fallback para sprites originais se os melhorados não existirem
+            enemy_type_fallback = {
+                'goblin': 'goblin_scout_sprite',
+                'orc': 'orc_berserker_sprite', 
+                'skeleton': 'skeleton_archer_sprite',
+                'wizard': 'dark_mage_sprite',
+                'dragon': 'dragon_sprite'
+            }
+            
+            # Converter enum para string
+            if hasattr(enemy.enemy_type, 'value'):
+                enemy_type_str = enemy.enemy_type.value.lower()
+            elif hasattr(enemy.enemy_type, 'name'):
+                enemy_type_str = enemy.enemy_type.name.lower()
+            else:
+                enemy_type_str = str(enemy.enemy_type).lower()
+                
+            # Usar índice como ID se não existir
+            enemy_id = getattr(enemy, 'id', f"enemy_{i}")
+            
+            # Tentar carregar sprite melhorado primeiro
+            enhanced_sprite_filename = enemy_type_mapping.get(enemy_type_str)
+            sprite_loaded = False
+            
+            if enhanced_sprite_filename:
+                enhanced_sprite_path = Path("assets/generated") / enhanced_sprite_filename
+                if enhanced_sprite_path.exists():
+                    logger.info(f"🎨 Carregando sprite melhorado: {enhanced_sprite_path}")
+                    original_sprite = pygame.image.load(str(enhanced_sprite_path)).convert_alpha()
+                    scaled_sprite = fit_height(original_sprite, max_enemy_height)
+                    self.enemy_sprites[enemy_id] = scaled_sprite
+                    sprite_loaded = True
+                    logger.info(f"✅ Sprite melhorado carregado para {enemy_type_str}")
+            
+            # Fallback para sprite original se melhorado não existe
+            if not sprite_loaded:
+                fallback_sprite_key = enemy_type_fallback.get(enemy_type_str, f"{enemy_type_str}_sprite")
+                
+                if fallback_sprite_key in self.assets:
+                    original_sprite = self.assets[fallback_sprite_key]
+                    scaled_sprite = fit_height(original_sprite, max_enemy_height)
+                    self.enemy_sprites[enemy_id] = scaled_sprite
+                    logger.info(f"✅ Sprite original carregado para {enemy_type_str}: {fallback_sprite_key}")
+                else:
+                    logger.warning(f"❌ Nenhum sprite encontrado para inimigo: {enemy_type_str}")
+                    # Criar sprite placeholder se não existir
+                    placeholder = pygame.Surface((80, max_enemy_height), pygame.SRCALPHA)
+                    placeholder.fill((100, 0, 0, 150))  # Vermelho translúcido
+                    self.enemy_sprites[enemy_id] = placeholder
+                
+    def _load_and_scale_player_sprite(self):
+        """Carrega e escala sprite melhorado e transparente do jogador para 35% da altura da tela."""
+        try:
+            # Tentar carregar sprite melhorado baseado no personagem
+            player = getattr(self.combat_engine, 'player', None)
+            character_id = getattr(player, 'character_class', 'knight').lower()
+            
+            # Verificar sprites melhorados primeiro
+            enhanced_sprite_paths = [
+                f"assets/generated/{character_id}_sprite_enhanced.png",
+                f"assets/generated/{character_id}_transparent.png",
+                f"assets/generated/{character_id}_sprite.png"
+            ]
+            
+            for sprite_path in enhanced_sprite_paths:
+                if Path(sprite_path).exists():
+                    logger.info(f"🎭 Carregando sprite melhorado para combate: {sprite_path}")
+                    sprite_image = pygame.image.load(sprite_path).convert_alpha()
+                    
+                    target_height = int(self.height * 0.35)
+                    self.player_sprite = fit_height(sprite_image, target_height)
+                    
+                    logger.info("✅ Sprite melhorado do personagem carregado para combate")
+                    return
+                    
+        except Exception as e:
+            logger.warning(f"⚠️ Erro ao carregar sprite melhorado: {e}")
         
-    def _setup_zones(self):
-        """Configura as zonas de combate (inimigos e jogador)."""
-        # Zona de inimigos (topo)
-        enemy_zone_height = 300
-        enemy_zone_rect = pygame.Rect(
-            theme.spacing.MARGIN_LARGE,
-            theme.spacing.MARGIN_LARGE, 
-            self.width - theme.spacing.MARGIN_LARGE * 2,
-            enemy_zone_height
-        )
-        self.enemy_zone = CombatZone(enemy_zone_rect, (2, 1), "enemy")
-        
-        # Zona do jogador (base)
-        player_zone_height = 200
-        player_zone_y = self.height - player_zone_height - theme.spacing.MARGIN_LARGE
-        player_zone_rect = pygame.Rect(
-            theme.spacing.MARGIN_LARGE,
-            player_zone_y,
-            self.width - theme.spacing.MARGIN_LARGE * 2, 
-            player_zone_height
-        )
-        self.player_zone = CombatZone(player_zone_rect, (5, 1), "player")
-        
-        # Preencher slots com cartas e inimigos
-        self._populate_zones()
-        
-    def _populate_zones(self):
-        """Preenche as zonas com cartas e inimigos."""
-        # Preencher zona do jogador com cartas da mão
-        if hasattr(self.combat_engine, 'current_player'):
-            player = self.combat_engine.current_player
-            if hasattr(player, 'hand'):
-                for i, card in enumerate(player.hand[:5]):  # Max 5 cartas visíveis
-                    if i < len(self.player_zone.slots):
-                        self.player_zone.slots[i].entity = card
-        
-        # Preencher zona de inimigos
-        if hasattr(self.combat_engine, 'enemies'):
-            for i, enemy in enumerate(self.combat_engine.enemies[:2]):  # Max 2 inimigos
-                if i < len(self.enemy_zone.slots):
-                    self.enemy_zone.slots[i].entity = enemy
+        # Fallback: usar sprite original se disponível
+        if "player_sprite" in self.assets:
+            target_height = int(self.height * 0.35)
+            self.player_sprite = fit_height(self.assets["player_sprite"], target_height)
+            logger.info("Sprite original carregado como fallback")
+        else:
+            logger.warning("❌ Nenhum sprite do jogador encontrado")
     
     def _setup_buttons(self):
-        """Configura os botões da interface."""
-        # Botão End Turn - parte inferior direita
-        button_width = 120
-        button_height = 40
+        """Configura os botões da interface seguindo as diretrizes de design."""
+        # Botão End Turn - maior, central-direita, cor roxa tema
+        button_width = 180
+        button_height = 45
+        
         self.end_turn_button = Button(
-            x=self.width - button_width - theme.spacing.MARGIN_LARGE,
-            y=self.height - button_height - theme.spacing.MARGIN_MEDIUM,
+            x=self.width - 220,  # 220px da borda direita
+            y=self.player_hand_zone.top - 60,  # 60px acima da zona da mão
             width=button_width,
             height=button_height,
             text="End Turn",
@@ -338,17 +491,18 @@ class CombatScreen:
             style="medieval"
         )
         
-        # Botão Pause - topo direito como IconButton
-        icon_size = 32
-        self.pause_button = Button(
-            x=self.width - icon_size - theme.spacing.MARGIN_MEDIUM,
-            y=theme.spacing.MARGIN_MEDIUM,
-            width=icon_size,
-            height=icon_size,
-            text="",  # Sem texto, só ícone
-            on_click=self._toggle_pause,
-            style="icon"
-        )
+        # Aplicar texturas IA nos botões se disponíveis
+        if "button_texture_mystical" in self.assets:
+            button_texture = pygame.transform.scale(
+                self.assets["button_texture_mystical"], (button_width, button_height)
+            )
+            self.end_turn_button.textures = {
+                "normal": button_texture,
+                "hover": apply_glow_effect(button_texture, (138, 43, 226), 3),  # Roxo
+                "pressed": button_texture
+            }
+        
+        logger.info("Botões configurados com texturas IA")
         
     def _setup_particles(self):
         """Configura o sistema de partículas."""
@@ -381,21 +535,144 @@ class CombatScreen:
         self.player_panel_surface = pygame.Surface((panel_width, panel_height), pygame.SRCALPHA)
         
     def _generate_background(self):
-        """Gera ou carrega o background dinâmico."""
-        if "battlefield_background" in self.assets:
-            self.background = self.assets["battlefield_background"]
+        """Gera background dinâmico baseado no tipo de inimigo predominante e personagem."""
+        try:
+            # 1. Primeiro, verificar se há inimigos específicos para usar seu background
+            enemy_background = self._get_enemy_specific_background()
+            if enemy_background:
+                self.background = enemy_background
+                logger.info("✅ Background específico do inimigo carregado para combate")
+                return
+            
+            # 2. Fallback: usar background do personagem selecionado
+            character_background = self._get_character_background()
+            if character_background:
+                self.background = character_background
+                logger.info("✅ Background do personagem carregado para combate")
+                return
+                
+            # 3. Último fallback: background genérico
+            self._create_fallback_background()
+            logger.info("Background fallback criado para combate")
+            
+        except Exception as e:
+            logger.error(f"Erro ao gerar background: {e}")
+            self._create_fallback_background()
+    
+    def _get_enemy_specific_background(self):
+        """Obtém background específico baseado no tipo de inimigo predominante."""
+        if not hasattr(self.combat_engine, 'enemies') or not self.combat_engine.enemies:
+            return None
+            
+        # Mapear tipos de inimigo para backgrounds específicos
+        enemy_bg_mapping = {
+            'goblin': 'combat_bg_goblin_cave.png',
+            'orc': 'combat_bg_orc_camp.png', 
+            'skeleton': 'combat_bg_skeleton_crypt.png',
+            'dragon': 'combat_bg_dragon_lair.png',
+            'wizard': 'combat_bg_dark_tower.png',
+            'dark_mage': 'combat_bg_dark_tower.png'
+        }
+        
+        # Contar tipos de inimigos para encontrar o predominante
+        enemy_counts = {}
+        for enemy in self.combat_engine.enemies:
+            # Converter enum para string
+            if hasattr(enemy.enemy_type, 'value'):
+                enemy_type_str = enemy.enemy_type.value.lower()
+            elif hasattr(enemy.enemy_type, 'name'):
+                enemy_type_str = enemy.enemy_type.name.lower()
+            else:
+                enemy_type_str = str(enemy.enemy_type).lower()
+                
+            enemy_counts[enemy_type_str] = enemy_counts.get(enemy_type_str, 0) + 1
+        
+        # Encontrar tipo predominante
+        if enemy_counts:
+            predominant_type = max(enemy_counts, key=enemy_counts.get)
+            bg_filename = enemy_bg_mapping.get(predominant_type)
+            
+            if bg_filename:
+                bg_path = Path("assets/generated") / bg_filename
+                if bg_path.exists():
+                    logger.info(f"🎨 Carregando background do inimigo: {bg_path}")
+                    background = pygame.image.load(str(bg_path)).convert()
+                    
+                    # Redimensionar para fit screen
+                    if background.get_size() != (self.width, self.height):
+                        background = pygame.transform.scale(background, (self.width, self.height))
+                    
+                    # Aplicar overlay sutil para atmosfera de combate
+                    overlay = pygame.Surface((self.width, self.height))
+                    overlay.set_alpha(60)  # Overlay mais sutil
+                    overlay.fill((80, 0, 0))  # Tom avermelhado para combate
+                    background.blit(overlay, (0, 0))
+                    
+                    return background
+        
+        return None
+    
+    def _get_character_background(self):
+        """Obtém background específico do personagem selecionado."""
+        try:
+            # Obter player através do combat_engine
+            player = getattr(self.combat_engine, 'player', None)
+            character_id = getattr(player, 'character_class', 'knight').lower()
+            
+            # Verificar backgrounds melhorados dos personagens (novos backgrounds únicos)
+            character_bg_paths = [
+                f"assets/generated/{character_id}_bg_throne_room.png" if character_id == "knight" else None,
+                f"assets/generated/{character_id}_bg_sanctum.png" if character_id == "wizard" else None,
+                f"assets/generated/{character_id}_bg_lair.png" if character_id == "assassin" else None,
+                f"assets/generated/{character_id}_bg_hd_3440x1440.png",
+                f"assets/generated/{character_id}_bg.png"
+            ]
+            
+            # Filtrar None values
+            character_bg_paths = [path for path in character_bg_paths if path]
+            
+            for bg_path in character_bg_paths:
+                if Path(bg_path).exists():
+                    logger.info(f"🎨 Carregando background do personagem: {bg_path}")
+                    background = pygame.image.load(bg_path).convert()
+                    
+                    # Redimensionar para fit screen se necessário
+                    if background.get_size() != (self.width, self.height):
+                        background = pygame.transform.scale(background, (self.width, self.height))
+                    
+                    # Aplicar overlay sutil para atmosfera de combate
+                    overlay = pygame.Surface((self.width, self.height))
+                    overlay.set_alpha(40)  # Overlay bem sutil para personagem
+                    overlay.fill((60, 60, 60))  # Tom neutro
+                    background.blit(overlay, (0, 0))
+                    
+                    return background
+                    
+        except Exception as e:
+            logger.warning(f"⚠️ Erro ao carregar background do personagem: {e}")
+        
+        return None
+    
+    def _create_fallback_background(self):
+        """Cria background fallback se nenhum específico for encontrado."""
+        # Fallback: tentar background genérico
+        if "combat_bg" in self.assets:
+            self.background = self.assets["combat_bg"]
             # Redimensionar para fit screen se necessário
             if self.background.get_size() != (self.width, self.height):
                 self.background = pygame.transform.scale(self.background, (self.width, self.height))
         else:
-            # Criar background placeholder
+            # Criar background placeholder melhorado
             self.background = pygame.Surface((self.width, self.height))
-            self.background.fill((20, 15, 30))  # Cor base escura
             
-            # Adicionar gradiente simples
+            # Gradiente medieval escuro
             for y in range(self.height):
-                alpha = min(100, y // 5)
-                color = (20 + alpha//4, 15 + alpha//6, 30 + alpha//3)
+                progress = y / self.height
+                # Cores mais ricas para combate
+                r = int(40 + progress * 20)  # Vermelho base
+                g = int(30 + progress * 15)  # Verde sutil
+                b = int(20 + progress * 25)  # Azul para profundidade
+                color = (r, g, b)
                 pygame.draw.line(self.background, color, (0, y), (self.width, y))
     
     def update(self, dt: float):
@@ -409,18 +686,12 @@ class CombatScreen:
         self.last_mouse_pos = self.mouse_pos
         self.mouse_pos = pygame.mouse.get_pos()
         
-        # Atualizar animações das zonas
-        for slot in self.player_zone.slots:
-            slot.update(dt)
-        for slot in self.enemy_zone.slots:
-            slot.update(dt)
-            
-        # Atualizar botões
-        self.end_turn_button.update(dt)
-        self.pause_button.update(dt)
+        # Atualizar sistema de animações
+        animation_manager.update(dt)
         
-        # Atualizar sistema de partículas
-        self.particle_system.update(dt)
+        # Atualizar botões
+        if hasattr(self, 'end_turn_button'):
+            self.end_turn_button.update(dt)
         
         # Atualizar transições de turno
         if self.turn_transition_active:
@@ -458,9 +729,15 @@ class CombatScreen:
         Returns:
             String de ação se alguma ação deve ser executada, None caso contrário
         """
+        # Check for combat end states
+        if self.state == CombatState.VICTORY:
+            return "victory"
+        elif self.state == CombatState.DEFEAT:
+            return "defeat"
+            
         if event.type == pygame.QUIT:
             self.running = False
-            return "exit_combat"
+            return "exit"
             
         elif event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
@@ -469,7 +746,7 @@ class CombatScreen:
                 elif self.state == CombatState.TARGET_SELECTION:
                     self._cancel_target_selection()
                 elif self.state == CombatState.PAUSED:
-                    return "exit_combat"
+                    return "exit"
                 else:
                     self.state = CombatState.PAUSED
                 return None
@@ -506,23 +783,21 @@ class CombatScreen:
                 self._end_turn()
             return
             
-        if self.pause_button.rect.collidepoint(x, y):
-            self._toggle_pause()
+        # Verificar clique nos botões
+        if hasattr(self, 'end_turn_button') and self.end_turn_button.rect.collidepoint(x, y):
+            if self.state == CombatState.PLAYER_TURN:
+                self._end_turn()
             return
             
-        # Verificar clique nas cartas do jogador
-        if self.state == CombatState.PLAYER_TURN:
-            for slot in self.player_zone.slots:
-                if slot.entity and slot.get_display_rect().collidepoint(x, y):
-                    self._select_card(slot)
-                    return
+        # Verificar clique na zona da mão do jogador (para futuras implementações)
+        if self.state == CombatState.PLAYER_TURN and self.player_hand_zone.collidepoint(x, y):
+            # TODO: Implementar seleção de cartas quando sistema de cartas estiver pronto
+            pass
                     
-        # Verificar clique nos inimigos (para targeting)
-        if self.state == CombatState.TARGET_SELECTION:
-            for slot in self.enemy_zone.slots:
-                if slot.entity and slot.rect.collidepoint(x, y):
-                    self._target_enemy(slot)
-                    return
+        # Verificar clique nos sprites de inimigos (para targeting)
+        if self.state == CombatState.TARGET_SELECTION and hasattr(self.combat_engine, 'enemies'):
+            # TODO: Implementar targeting de inimigos
+            pass
                     
     def _handle_right_click(self, pos: Tuple[int, int]):
         """Processa clique direito (cancelar seleções)."""
@@ -535,19 +810,8 @@ class CombatScreen:
         """Processa movimento do mouse para hover effects."""
         x, y = pos
         
-        # Atualizar hover das cartas do jogador
-        for slot in self.player_zone.slots:
-            slot.is_hovered = (slot.entity and 
-                              slot.get_display_rect().collidepoint(x, y))
-                              
-        # Atualizar hover dos inimigos
-        for slot in self.enemy_zone.slots:
-            slot.is_hovered = (slot.entity and 
-                              slot.rect.collidepoint(x, y))
-                              
-        # Atualizar hover dos botões
-        self.end_turn_button.is_hovered = self.end_turn_button.rect.collidepoint(x, y)
-        self.pause_button.is_hovered = self.pause_button.rect.collidepoint(x, y)
+        # Armazenar posição do mouse para futuros efeitos de hover
+        self.mouse_pos = pos
         
     def _select_card(self, slot: CombatSlot):
         """Seleciona uma carta para uso."""
@@ -582,6 +846,14 @@ class CombatScreen:
         if self.selected_card and self.targeted_enemy:
             # Disparar partículas de dano no alvo
             self._trigger_damage_particles(target_slot.rect.center)
+            
+            # Trigger animação de ataque do jogador
+            animation_manager.play_animation("knight", "attack", force_restart=True)
+            
+            # Trigger animação de hurt do inimigo alvo
+            target_index = self.combat_engine.enemies.index(self.targeted_enemy)
+            enemy_anim_id = f"{self._get_enemy_anim_id(self.targeted_enemy)}_{target_index}"
+            animation_manager.play_animation(enemy_anim_id, "hurt", force_restart=True)
             
             # Aplicar efeito da carta
             self._apply_card_effect(self.selected_card, self.targeted_enemy)
@@ -651,45 +923,190 @@ class CombatScreen:
             
     def draw(self):
         """
-        Desenha toda a interface de combate profissional.
+        Desenha toda a interface de combate profissional seguindo as diretrizes de design.
         
-        Ordem de renderização:
-        1. Background com parallax
-        2. Zonas de combate
-        3. Cartas e inimigos
-        4. Painel do jogador
-        5. Botões
-        6. Partículas
-        7. Overlays e transições
+        Ordem de renderização otimizada:
+        1. Background IA escalado
+        2. Zona de inimigos com overlay escuro
+        3. Sprites de inimigos escalados com grid flexível
+        4. Sprite do jogador centralizado
+        5. Zona da mão com slots definidos
+        6. Botões polidos
+        7. Overlays finais
         """
-        # 1. Background dinâmico com parallax
-        self._draw_background_with_parallax()
+        # 1. Background IA escalado para tela
+        self.screen.blit(self.background, (0, 0))
         
-        # 2. Zonas de combate
-        self._draw_zones()
+        # 2. Zona de inimigos com overlay escuro + sprites
+        self._draw_enemy_zone()
         
-        # 3. Cartas e inimigos
-        self._draw_cards()
-        self._draw_enemies()
+        # 3. Sprite do jogador centralizado
+        self._draw_player_sprite()
         
-        # 4. Painel flutuante do jogador
-        self._draw_player_panel()
+        # 4. Zona da mão do jogador
+        self._draw_player_hand()
         
         # 5. Botões
         self._draw_buttons()
         
-        # 6. Sistema de partículas
-        self._draw_particles()
-        
-        # 7. Overlays e estados especiais
-        self._draw_overlays()
-        
-        # 8. Debug info (se ativo)
+        # 6. Debug info (se necessário)
         if hasattr(self, 'debug_mode') and self.debug_mode:
             self._draw_debug_info()
             
+    def _draw_enemy_zone(self):
+        """Desenha zona de inimigos com overlay escuro e sprites escalados."""
+        # Criar overlay escuro para a zona
+        zone_surf = pygame.Surface(self.enemy_zone.size, pygame.SRCALPHA)
+        zone_surf.fill((0, 0, 0, 140))  # 55% opacidade
+        self.screen.blit(zone_surf, self.enemy_zone.topleft)
+        
+        # Desenhar sprites dos inimigos em grid flexível usando animações
+        if hasattr(self.combat_engine, 'enemies') and self.combat_engine.enemies:
+            enemies = self.combat_engine.enemies
+            
+            # Calcular grid flexível baseado no número de inimigos
+            col_width = self.enemy_zone.width // len(enemies)
+            
+            for i, enemy in enumerate(enemies):
+                # Usar ID único para animação
+                unique_id = f"{self._get_enemy_anim_id(enemy)}_{i}"
+                
+                # Obter frame atual da animação
+                current_frame = animation_manager.get_current_frame(unique_id)
+                
+                if current_frame:
+                    # Posicionar sprite na coluna correspondente
+                    pos_x = self.enemy_zone.left + col_width // 2 - current_frame.get_width() // 2 + i * col_width
+                    pos_y = self.enemy_zone.bottom - current_frame.get_height()
+                    
+                    sprite_rect = self.screen.blit(current_frame, (pos_x, pos_y))
+                    
+                    # Desenhar healthbar acima do sprite
+                    self._draw_enemy_healthbar(enemy, sprite_rect)
+                else:
+                    # Fallback para sprite estático se animação não disponível
+                    enemy_id = getattr(enemy, 'id', f"enemy_{i}")
+                    if enemy_id in self.enemy_sprites:
+                        sprite = self.enemy_sprites[enemy_id]
+                        pos_x = self.enemy_zone.left + col_width // 2 - sprite.get_width() // 2 + i * col_width
+                        pos_y = self.enemy_zone.bottom - sprite.get_height()
+                        sprite_rect = self.screen.blit(sprite, (pos_x, pos_y))
+                        self._draw_enemy_healthbar(enemy, sprite_rect)
+                    
+    def _draw_enemy_healthbar(self, enemy, sprite_rect):
+        """Desenha barra de vida do inimigo acima do sprite."""
+        # Posicionar barra acima do sprite
+        bar_rect = pygame.Rect(
+            sprite_rect.left, 
+            sprite_rect.top - 12, 
+            sprite_rect.width, 
+            8
+        )
+        
+        # Fundo da barra (escuro)
+        pygame.draw.rect(self.screen, (40, 40, 40), bar_rect)
+        
+        # Barra de vida (proporcional ao HP)
+        if hasattr(enemy, 'hp') and hasattr(enemy, 'max_hp') and enemy.max_hp > 0:
+            hp_ratio = enemy.hp / enemy.max_hp
+            hp_width = int((sprite_rect.width - 2) * hp_ratio)
+            
+            if hp_width > 0:
+                hp_rect = pygame.Rect(
+                    bar_rect.left + 1,
+                    bar_rect.top + 1, 
+                    hp_width,
+                    6
+                )
+                
+                # Cor da barra baseada no HP (verde -> amarelo -> vermelho)
+                if hp_ratio > 0.6:
+                    hp_color = (0, 200, 0)  # Verde
+                elif hp_ratio > 0.3:
+                    hp_color = (255, 255, 0)  # Amarelo
+                else:
+                    hp_color = (200, 0, 0)  # Vermelho
+                    
+                pygame.draw.rect(self.screen, hp_color, hp_rect)
+                
+    def _get_enemy_anim_id(self, enemy) -> str:
+        """Retorna ID de animação para um inimigo."""
+        enemy_type_mapping = {
+            'goblin': 'goblin',
+            'orc': 'orc', 
+            'skeleton': 'skeleton',
+            'wizard': 'mage',
+            'dragon': 'dragon'
+        }
+        
+        # Converter enum para string
+        if hasattr(enemy.enemy_type, 'value'):
+            enemy_type_str = enemy.enemy_type.value.lower()
+        elif hasattr(enemy.enemy_type, 'name'):
+            enemy_type_str = enemy.enemy_type.name.lower()
+        else:
+            enemy_type_str = str(enemy.enemy_type).lower()
+            
+        return enemy_type_mapping.get(enemy_type_str, 'goblin')
+                
+    def _draw_player_sprite(self):
+        """Desenha sprite do jogador centralizado usando animação 30fps."""
+        # Obter frame atual da animação do knight
+        current_frame = animation_manager.get_current_frame("knight")
+        
+        if current_frame:
+            # Posicionar sprite do jogador no centro-base, acima da zona da mão
+            sprite_rect = current_frame.get_rect(
+                midbottom=(self.width // 2, self.player_hand_zone.top - 10)
+            )
+            self.screen.blit(current_frame, sprite_rect)
+        elif self.player_sprite:
+            # Fallback para sprite estático
+            sprite_rect = self.player_sprite.get_rect(
+                midbottom=(self.width // 2, self.player_hand_zone.top - 10)
+            )
+            self.screen.blit(self.player_sprite, sprite_rect)
+            
+    def _draw_player_hand(self):
+        """Desenha zona da mão do jogador com painel e slots."""
+        # Painel azul-escuro translúcido para a mão
+        hand_overlay = pygame.Surface(self.player_hand_zone.size, pygame.SRCALPHA)
+        hand_overlay.fill((30, 40, 90, 200))  # Azul-escuro translúcido
+        self.screen.blit(hand_overlay, self.player_hand_zone.topleft)
+        
+        # Desenhar 5 slots para cartas
+        slot_width = self.player_hand_zone.width // 5
+        slot_height = self.player_hand_zone.height - 20  # Margem interna
+        
+        for i in range(5):
+            slot_x = self.player_hand_zone.left + i * slot_width + 10
+            slot_y = self.player_hand_zone.top + 10
+            
+            slot_rect = pygame.Rect(slot_x, slot_y, slot_width - 20, slot_height)
+            
+            # Outline do slot
+            pygame.draw.rect(self.screen, (80, 80, 80), slot_rect, 2)
+            
+            # Fundo do slot
+            pygame.draw.rect(self.screen, (50, 50, 50, 100), slot_rect)
+            
+    def _draw_buttons(self):
+        """Desenha botões da interface."""
+        if hasattr(self, 'end_turn_button'):
+            self.end_turn_button.draw(self.screen)
+            
     def _draw_background_with_parallax(self):
-        """Desenha background com efeito parallax baseado no mouse."""
+        """Desenha background de combate épico com efeito parallax."""
+        # Verificar se temos background IA carregado
+        if not hasattr(self, 'background_surface') or self.background_surface is None:
+            # Fallback: fundo preto simples
+            self.screen.fill(theme.colors.SHADOW_BLACK)
+            return
+        
+        # Escalar background para tela mantendo proporção
+        screen_size = self.screen.get_size()
+        background_scaled = pygame.transform.smoothscale(self.background_surface, screen_size)
+        
         # Calcular offset de parallax
         mouse_x, mouse_y = self.mouse_pos
         center_x, center_y = self.width // 2, self.height // 2
@@ -700,15 +1117,15 @@ class CombatScreen:
         offset_y = (mouse_y - center_y) * parallax_strength
         
         # Desenhar background com offset
-        bg_rect = self.background.get_rect()
+        bg_rect = background_scaled.get_rect()
         bg_rect.center = (center_x + offset_x, center_y + offset_y)
         
-        self.screen.blit(self.background, bg_rect)
+        self.screen.blit(background_scaled, bg_rect)
         
-        # Adicionar blur direcional sutil (simulado com transparência)
-        blur_overlay = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
-        blur_overlay.fill((0, 0, 0, 10))  # Muito sutil
-        self.screen.blit(blur_overlay, (0, 0))
+        # Adicionar overlay sutil para melhor contraste
+        overlay = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 20))  # Muito sutil
+        self.screen.blit(overlay, (0, 0))
         
     def _draw_zones(self):
         """Desenha as zonas de combate com painéis semi-transparentes."""
@@ -814,72 +1231,159 @@ class CombatScreen:
         self.screen.blit(card_surface, display_rect.topleft)
         
     def _draw_enemies(self):
-        """Desenha todos os inimigos na zona de inimigos."""
-        for slot in self.enemy_zone.slots:
-            if slot.entity:
-                self._draw_enemy_in_slot(slot)
+        """Desenha todos os inimigos na zona de inimigos usando sprites IA."""
+        # Zona inimigos (topo) - posições fixas
+        screen_width = self.screen.get_width()
+        
+        # Obter inimigos do combat engine
+        enemies = getattr(self.combat_engine, 'enemies', [])
+        alive_enemies = [e for e in enemies if hasattr(e, 'hp') and e.hp > 0]
+        
+        for i, enemy in enumerate(alive_enemies[:2]):  # Max 2 inimigos na tela
+            # Posição horizontal distribuída
+            x_pos = 200 + i * 500
+            y_pos = 40
+            
+            # Determinar sprite do inimigo
+            enemy_sprite = self._get_enemy_sprite(enemy)
+            
+            if enemy_sprite:
+                # Escalar sprite para tamanho apropriado
+                sprite_scaled = pygame.transform.scale(enemy_sprite, (200, 300))
+                sprite_rect = sprite_scaled.get_rect(midtop=(x_pos, y_pos))
                 
-    def _draw_enemy_in_slot(self, slot: CombatSlot):
+                # Efeito de hover
+                mouse_pos = pygame.mouse.get_pos()
+                if sprite_rect.collidepoint(mouse_pos):
+                    # Glow effect para hover
+                    glow_surface = pygame.Surface((sprite_rect.width + 20, sprite_rect.height + 20), pygame.SRCALPHA)
+                    glow_surface.fill((255, 100, 100, 60))  # Brilho vermelho
+                    glow_rect = glow_surface.get_rect(center=sprite_rect.center)
+                    self.screen.blit(glow_surface, glow_rect)
+                
+                # Desenhar sprite
+                self.screen.blit(sprite_scaled, sprite_rect)
+                
+                # HP bar acima do inimigo
+                self._draw_enemy_hp_bar(enemy, sprite_rect.centerx, sprite_rect.top - 20)
+                
+            else:
+                # Fallback: retângulo simples
+                self._draw_enemy_placeholder(enemy, x_pos, y_pos)
+    
+    def _get_enemy_sprite(self, enemy) -> Optional[pygame.Surface]:
         """
-        Desenha um inimigo individual.
+        Obtém sprite IA de um inimigo baseado no tipo/nome.
         
         Args:
-            slot: Slot contendo o inimigo
-        """
-        enemy = slot.entity
-        display_rect = slot.get_display_rect()
-        
-        # Verificação de segurança
-        if display_rect is None:
-            logger.warning(f"display_rect is None for slot: {slot}")
-            return
-        
-        # Surface do inimigo
-        enemy_surface = pygame.Surface((display_rect.width, display_rect.height), pygame.SRCALPHA)
-        
-        # Background do inimigo
-        if slot.is_hovered:
-            bg_color = (120, 60, 60, 180)
-        else:
-            bg_color = (90, 45, 45, 160)
+            enemy: Objeto inimigo
             
-        enemy_surface.fill(bg_color)
+        Returns:
+            Surface do sprite ou None
+        """
+        if not hasattr(self, 'enemy_sprites'):
+            return None
+            
+        # Mapear tipos de inimigos para sprites
+        enemy_type_map = {
+            'goblin': 'goblin_scout',
+            'orc': 'orc_berserker', 
+            'skeleton': 'skeleton_archer',
+            'mage': 'dark_mage'
+        }
+        
+        # Tentar identificar tipo do inimigo
+        enemy_name = getattr(enemy, 'name', '').lower()
+        enemy_id = getattr(enemy, 'id', '').lower()
+        
+        for enemy_type, sprite_key in enemy_type_map.items():
+            if enemy_type in enemy_name or enemy_type in enemy_id:
+                return self.enemy_sprites.get(sprite_key)
+        
+        # Fallback: primeiro sprite disponível
+        if self.enemy_sprites:
+            return list(self.enemy_sprites.values())[0]
+            
+        return None
+    
+    def _draw_enemy_hp_bar(self, enemy, center_x: int, y: int):
+        """
+        Desenha barra de HP de um inimigo.
+        
+        Args:
+            enemy: Objeto inimigo
+            center_x: Posição X central
+            y: Posição Y
+        """
+        if not (hasattr(enemy, 'hp') and hasattr(enemy, 'max_hp')):
+            return
+            
+        bar_width = 120
+        bar_height = 8
+        bar_x = center_x - bar_width // 2
+        
+        # Background da barra
+        bg_rect = pygame.Rect(bar_x, y, bar_width, bar_height)
+        pygame.draw.rect(self.screen, (60, 0, 0), bg_rect)
+        
+        # Barra de HP
+        hp_percent = enemy.hp / enemy.max_hp
+        hp_width = int(bar_width * hp_percent)
+        hp_rect = pygame.Rect(bar_x, y, hp_width, bar_height)
+        pygame.draw.rect(self.screen, (200, 60, 60), hp_rect)
         
         # Borda
-        border_color = (200, 100, 100) if slot.is_hovered else (150, 80, 80)
-        pygame.draw.rect(enemy_surface, border_color,
-                        (0, 0, display_rect.width, display_rect.height), 2)
+        pygame.draw.rect(self.screen, (255, 255, 255), bg_rect, 1)
+        
+        # Texto de HP
+        font = pygame.font.Font(None, 20)
+        hp_text = font.render(f"{enemy.hp}/{enemy.max_hp}", True, (255, 255, 255))
+        text_rect = hp_text.get_rect(center=(center_x, y - 12))
+        self.screen.blit(hp_text, text_rect)
+    
+    def _draw_enemy_placeholder(self, enemy, x: int, y: int):
+        """
+        Desenha placeholder para inimigo sem sprite.
+        
+        Args:
+            enemy: Objeto inimigo
+            x, y: Posição
+        """
+        rect = pygame.Rect(x - 75, y, 150, 200)
+        pygame.draw.rect(self.screen, (120, 60, 60), rect)
+        pygame.draw.rect(self.screen, (200, 100, 100), rect, 2)
         
         # Nome do inimigo
-        if hasattr(enemy, 'name'):
-            font = pygame.font.Font(None, 24)
-            text_surface = font.render(enemy.name, True, (255, 255, 255))
-            text_rect = text_surface.get_rect(center=(display_rect.width//2, 20))
-            enemy_surface.blit(text_surface, text_rect)
+        font = pygame.font.Font(None, 24)
+        name = getattr(enemy, 'name', 'Enemy')
+        text = font.render(name, True, (255, 255, 255))
+        text_rect = text.get_rect(center=(x, y + 100))
+        self.screen.blit(text, text_rect)
+        
+    def _draw_player_sprite(self):
+        """Desenha sprite do jogador na zona do jogador usando IA."""
+        if not hasattr(self, 'player_sprite') or self.player_sprite is None:
+            return
             
-        # HP do inimigo
-        if hasattr(enemy, 'hp') and hasattr(enemy, 'max_hp'):
-            hp_width = display_rect.width - 20
-            hp_height = 8
-            hp_x = 10
-            hp_y = display_rect.height - 20
-            
-            # Barra de HP
-            hp_bg_rect = pygame.Rect(hp_x, hp_y, hp_width, hp_height)
-            pygame.draw.rect(enemy_surface, (100, 0, 0), hp_bg_rect)
-            
-            hp_percent = enemy.hp / enemy.max_hp
-            hp_fill_width = int(hp_width * hp_percent)
-            hp_fill_rect = pygame.Rect(hp_x, hp_y, hp_fill_width, hp_height)
-            pygame.draw.rect(enemy_surface, (200, 0, 0), hp_fill_rect)
-            
-            # Texto de HP
-            hp_font = pygame.font.Font(None, 18)
-            hp_text = hp_font.render(f"{enemy.hp}/{enemy.max_hp}", True, (255, 255, 255))
-            enemy_surface.blit(hp_text, (hp_x, hp_y - 18))
-            
-        # Desenhar inimigo no screen
-        self.screen.blit(enemy_surface, display_rect.topleft)
+        # Zona jogador (base da tela)
+        screen_width = self.screen.get_width()
+        screen_height = self.screen.get_height()
+        
+        # Escalar sprite do jogador
+        player_scaled = pygame.transform.scale(self.player_sprite, (180, 280))
+        player_rect = player_scaled.get_rect(midbottom=(screen_width // 2, screen_height - 100))
+        
+        # Efeito de hover
+        mouse_pos = pygame.mouse.get_pos()
+        if player_rect.collidepoint(mouse_pos):
+            # Glow effect para hover
+            glow_surface = pygame.Surface((player_rect.width + 20, player_rect.height + 20), pygame.SRCALPHA)
+            glow_surface.fill((100, 150, 255, 60))  # Brilho azul
+            glow_rect = glow_surface.get_rect(center=player_rect.center)
+            self.screen.blit(glow_surface, glow_rect)
+        
+        # Desenhar sprite do jogador
+        self.screen.blit(player_scaled, player_rect)
         
     def _draw_player_panel(self):
         """Desenha o painel flutuante de estado do jogador."""
@@ -978,22 +1482,6 @@ class CombatScreen:
             icon = pygame.transform.scale(icon, (16, 16))
             self.player_panel_surface.blit(icon, (panel_width - 25, panel_height - 25))
             
-    def _draw_buttons(self):
-        """Desenha todos os botões da interface."""
-        # End Turn button
-        self.end_turn_button.draw(self.screen)
-        
-        # Pause button  
-        self.pause_button.draw(self.screen)
-        
-        # Adicionar ícone de pause se disponível
-        if "icon_pause" in self.assets:
-            pause_icon = self.assets["icon_pause"]
-            pause_icon = pygame.transform.scale(pause_icon, (24, 24))
-            icon_rect = pause_icon.get_rect()
-            icon_rect.center = self.pause_button.rect.center
-            self.screen.blit(pause_icon, icon_rect.topleft)
-            
     def _draw_particles(self):
         """Desenha o sistema de partículas."""
         self.particle_system.draw(self.screen)
@@ -1046,3 +1534,44 @@ class CombatScreen:
         for i, line in enumerate(debug_lines):
             debug_surface = debug_font.render(line, True, (255, 255, 0))
             self.screen.blit(debug_surface, (10, 10 + i * 22))
+
+    def run(self) -> bool:
+        """
+        Main combat loop.
+        
+        Returns:
+            True if player wins, False if player loses or exits
+        """
+        # Initialize pygame clock for this combat session
+        clock = pygame.time.Clock()
+        
+        try:
+            while True:
+                # Calculate delta time
+                dt = clock.tick(60) / 1000.0
+                
+                # Handle events
+                for event in pygame.event.get():
+                    if event.type == pygame.QUIT:
+                        return False
+                        
+                    result = self.handle_event(event)
+                    if result == "victory":
+                        return True
+                    elif result == "defeat":
+                        return False
+                    elif result == "exit":
+                        return False
+                
+                # Update
+                self.update(dt)
+                
+                # Draw
+                self.draw()
+                
+                # Update display
+                pygame.display.flip()
+                
+        except Exception as e:
+            logger.error(f"Error in combat loop: {e}", exc_info=True)
+            return False

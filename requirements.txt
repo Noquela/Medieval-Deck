@@ -6,6 +6,9 @@ diffusers>=0.24.0
 transformers>=4.35.0
 accelerate>=0.24.0
 
+# Optional GPU Optimizations
+# triton>=2.1.0  # Not available for Python 3.13 on Windows yet
+
 # Game Engine
 pygame>=2.5.0
 

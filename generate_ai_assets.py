@@ -77,7 +77,40 @@ try:
         except Exception as e:
             print(f"  ❌ Erro: {e}")
     
-    print("\n🎉 Geração concluída! Assets prontos para nova tela de seleção.")
+    print("\n🎉 Geração de personagens concluída!")
+    
+    # ========================================
+    # ETAPA B - ASSETS DE COMBATE
+    # ========================================
+    print("\n⚔️ Gerando assets de combate...")
+    
+    # 1. Background de combate épico
+    print("🏰 Gerando background de combate...")
+    combat_bg_path = asset_gen.generate_combat_bg()
+    if combat_bg_path:
+        print(f"  ✅ Combat background salvo: {Path(combat_bg_path).name}")
+    
+    # 2. Sprites de inimigos
+    enemies_config = [
+        {"id": "goblin_scout", "desc": "goblin warrior with rusty axe and leather armor"},
+        {"id": "orc_berserker", "desc": "large orc with massive sword and spiked armor"},
+        {"id": "skeleton_archer", "desc": "undead skeleton with longbow and tattered robes"},
+        {"id": "dark_mage", "desc": "evil wizard in black robes with glowing staff"}
+    ]
+    
+    print(f"👹 Gerando {len(enemies_config)} sprites de inimigos...")
+    for enemy in enemies_config:
+        enemy_path = asset_gen.generate_enemy_sprite(enemy["id"], enemy["desc"])
+        if enemy_path:
+            print(f"  ✅ {enemy['id']}: {Path(enemy_path).name}")
+    
+    # 3. Sprite do jogador
+    print("🛡️ Gerando sprite do jogador...")
+    player_path = asset_gen.generate_player_sprite("knight in golden armor with holy sword")
+    if player_path:
+        print(f"  ✅ Player sprite salvo: {Path(player_path).name}")
+    
+    print("\n🎉 Geração completa! Assets prontos para tela de combate.")
     
 except Exception as e:
     print(f"❌ Erro geral: {e}")

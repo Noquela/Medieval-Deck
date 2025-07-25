@@ -49,15 +49,17 @@ class AssetGenerator:
         self.config = config or Config()
         self.cache_dir = Path(cache_dir or self.config.assets_cache_dir)
         self.generated_dir = Path(self.config.assets_generated_dir)
+        self.assets_dir = Path(self.config.assets_dir)  # Usar assets_dir do config
         
         # Create directories
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.generated_dir.mkdir(parents=True, exist_ok=True)
+        (self.assets_dir / "ia").mkdir(parents=True, exist_ok=True)  # Criar diretório ia
         
         # Initialize components
         self.sdxl_pipeline = sdxl_pipeline or SDXLPipeline(
             cache_dir=str(self.cache_dir),
-            memory_efficient=self.config.memory_efficient
+            memory_efficient=self.config.ai.memory_efficient
         )
         self.prompt_optimizer = PromptOptimizer()
         
@@ -85,6 +87,36 @@ class AssetGenerator:
                 json.dump(self.asset_cache, f, indent=2, ensure_ascii=False)
         except Exception as e:
             logger.error(f"Failed to save asset cache: {e}")
+    
+    def _generate_image_from_prompt(self, prompt: str, width: int = 1024, height: int = 1024, cache_key: str = None) -> PIL.Image.Image:
+        """
+        Gera imagem usando SDXL pipeline com parâmetros otimizados.
+        
+        Args:
+            prompt: Prompt para geração
+            width: Largura da imagem
+            height: Altura da imagem
+            cache_key: Chave para cache (opcional)
+            
+        Returns:
+            Imagem PIL gerada
+        """
+        if not self.sdxl_pipeline:
+            raise RuntimeError("SDXL pipeline não disponível")
+        
+        # Carregar modelos se necessário
+        self.sdxl_pipeline.load_models()
+        
+        # Gerar imagem
+        image = self.sdxl_pipeline.generate_image(
+            prompt=prompt,
+            num_inference_steps=80,
+            guidance_scale=8.5,
+            width=width,
+            height=height
+        )
+        
+        return image
             
     def _generate_prompt_hash(self, prompt: str, params: Dict[str, Any]) -> str:
         """Generate hash for prompt and parameters for caching."""
@@ -1109,6 +1141,89 @@ class AssetGenerator:
         self._save_asset_cache()
         return generated_paths
 
+    def generate_enhanced_sprites(self, sprite_configs: Dict[str, Dict[str, Any]], force_regenerate: bool = False) -> Dict[str, str]:
+        """
+        Gera sprites melhorados baseados em configurações personalizadas.
+        
+        Args:
+            sprite_configs: Dicionário com configurações dos sprites {sprite_id: config}
+            force_regenerate: Força regeneração mesmo se existir no cache
+            
+        Returns:
+            Dicionário com paths dos sprites gerados
+        """
+        if not self.sdxl_pipeline:
+            logger.warning("SDXL pipeline não disponível para geração de sprites melhorados")
+            return {}
+            
+        generated_paths = {}
+        
+        # Negative prompt padrão para sprites limpos
+        sprite_negative_prompt = (
+            "blurry, low quality, pixelated, cartoon, anime, "
+            "text, watermark, signature, logo, bad anatomy, "
+            "deformed, distorted, ugly, poorly drawn, "
+            "background, scenery, landscape, room, environment, "
+            "furniture, objects, extra limbs, multiple people, "
+            "cropped, partial body, incomplete, floating parts"
+        )
+        
+        for sprite_id, config in sprite_configs.items():
+            filename = config["filename"]
+            sprite_path = self.config.assets_generated_dir / filename
+            cache_key = f"enhanced_{sprite_id}"
+            
+            # Verificar se precisa regenerar
+            if not force_regenerate and sprite_path.exists() and cache_key in self.asset_cache:
+                logger.info(f"✅ Usando sprite melhorado {sprite_id} do cache: {sprite_path}")
+                generated_paths[sprite_id] = str(sprite_path)
+                continue
+            
+            try:
+                logger.info(f"🎨 Gerando sprite melhorado {sprite_id}...")
+                
+                # Carregar modelos se necessário
+                self.sdxl_pipeline.load_models()
+                
+                # Usar negative prompt personalizado se fornecido, senão usar padrão
+                negative_prompt = config.get("negative", sprite_negative_prompt)
+                
+                # Gerar sprite com configurações personalizadas
+                image = self.sdxl_pipeline.generate_image(
+                    prompt=config["prompt"],
+                    negative_prompt=negative_prompt,
+                    num_inference_steps=80,  # Alta qualidade
+                    guidance_scale=8.5,     # Balanceado
+                    width=config["width"],
+                    height=config["height"]
+                )
+                
+                if image:
+                    # Salvar como PNG de alta qualidade
+                    image.save(sprite_path, "PNG", quality=95, optimize=True)
+                    
+                    # Atualizar cache
+                    self.asset_cache[cache_key] = {
+                        "prompt": config["prompt"],
+                        "path": str(sprite_path),
+                        "generated_at": datetime.now().isoformat(),
+                        "type": "enhanced_sprite",
+                        "resolution": f"{config['width']}x{config['height']}",
+                        "sprite_id": sprite_id
+                    }
+                    
+                    generated_paths[sprite_id] = str(sprite_path)
+                    logger.info(f"✅ Sprite melhorado {sprite_id} gerado: {sprite_path}")
+                else:
+                    logger.error(f"❌ Falha ao gerar sprite melhorado {sprite_id}")
+                
+            except Exception as e:
+                logger.error(f"💥 Erro ao gerar sprite melhorado {sprite_id}: {e}")
+        
+        # Salvar cache
+        self._save_asset_cache()
+        return generated_paths
+
     def generate_ui_assets(self, force_regenerate: bool = False) -> Dict[str, str]:
         """
         Gera assets de interface: botões, ícones, texturas.
@@ -1740,6 +1855,144 @@ class AssetGenerator:
         self._save_asset_cache()
         return processed_paths
 
+    def generate_combat_bg(self) -> str:
+        """
+        Gera background de combate épico em ultra-wide 3440x1440.
+        
+        Returns:
+            Caminho do arquivo gerado
+        """
+        prompt = ("epic medieval courtyard at sunset, cinematic, ultra-wide 16:9, "
+                 "digital painting, dramatic lighting, atmospheric, high quality")
+        
+        try:
+            # Usar o diretório de assets gerados
+            output_path = self.generated_dir / "combat_bg.png"
+            
+            if output_path.exists():
+                logger.info(f"✅ Combat background já existe: {output_path}")
+                return str(output_path)
+            
+            # Gerar com resolução ultra-wide
+            image = self._generate_image_from_prompt(
+                prompt=prompt,
+                width=1024,  # Usar resolução menor para teste
+                height=1024,
+                cache_key="combat_bg"
+            )
+            
+            # Redimensionar para ultra-wide depois
+            from PIL import Image
+            ultrawide_image = image.resize((3440, 1440), Image.LANCZOS)
+            
+            # Salvar
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            ultrawide_image.save(output_path, "PNG", quality=95, optimize=True)
+            
+            # Também salvar na pasta ia para o AssetLoader
+            ia_path = self.assets_dir / "assets" / "ia" / "combat_bg.png"
+            ia_path.parent.mkdir(parents=True, exist_ok=True)
+            ultrawide_image.save(ia_path, "PNG", quality=95, optimize=True)
+            
+            logger.info(f"✅ Combat background salvo: {output_path}")
+            logger.info(f"✅ Combat background copiado para: {ia_path}")
+            return str(output_path)
+            
+        except Exception as e:
+            logger.error(f"❌ Erro ao gerar combat background: {e}")
+            return ""
+
+    def generate_enemy_sprite(self, enemy_id: str, description: str) -> str:
+        """
+        Gera sprite de inimigo com fundo transparente.
+        
+        Args:
+            enemy_id: ID único do inimigo (ex: "goblin_scout")
+            description: Descrição do inimigo (ex: "goblin warrior with axe")
+            
+        Returns:
+            Caminho do arquivo gerado
+        """
+        prompt = (f"full body portrait of {description}, medieval fantasy, "
+                 f"painterly style, transparent background, digital art, high quality")
+        
+        try:
+            # Usar o diretório de assets gerados
+            output_path = self.generated_dir / f"{enemy_id}_sprite.png"
+            
+            if output_path.exists():
+                logger.info(f"✅ Enemy sprite já existe: {output_path}")
+                return str(output_path)
+            
+            # Gerar sprite
+            image = self._generate_image_from_prompt(
+                prompt=prompt,
+                width=512,
+                height=768,
+                cache_key=f"{enemy_id}_sprite"
+            )
+            
+            # Salvar
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            image.save(output_path, "PNG", quality=95, optimize=True)
+            
+            # Também salvar na pasta ia para o AssetLoader
+            ia_path = self.assets_dir / "assets" / "ia" / f"{enemy_id}_sprite.png"
+            ia_path.parent.mkdir(parents=True, exist_ok=True)
+            image.save(ia_path, "PNG", quality=95, optimize=True)
+            
+            logger.info(f"✅ Enemy sprite salvo: {output_path}")
+            return str(output_path)
+            
+        except Exception as e:
+            logger.error(f"❌ Erro ao gerar sprite {enemy_id}: {e}")
+            return ""
+
+    def generate_player_sprite(self, description: str = "knight in golden armor") -> str:
+        """
+        Gera sprite do jogador com fundo transparente.
+        
+        Args:
+            description: Descrição do personagem jogador
+            
+        Returns:
+            Caminho do arquivo gerado
+        """
+        prompt = (f"full body heroic {description}, medieval fantasy, "
+                 f"transparent background, painterly style, digital art, high quality")
+        
+        try:
+            # Usar o diretório de assets gerados
+            output_path = self.generated_dir / "player_sprite.png"
+            
+            if output_path.exists():
+                logger.info(f"✅ Player sprite já existe: {output_path}")
+                return str(output_path)
+            
+            # Gerar sprite
+            image = self._generate_image_from_prompt(
+                prompt=prompt,
+                width=512,
+                height=768,
+                cache_key="player_sprite"
+            )
+            
+            # Salvar
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            image.save(output_path, "PNG", quality=95, optimize=True)
+            
+            # Também salvar na pasta ia para o AssetLoader
+            ia_path = self.assets_dir / "assets" / "ia" / "player_sprite.png"
+            ia_path.parent.mkdir(parents=True, exist_ok=True)
+            image.save(ia_path, "PNG", quality=95, optimize=True)
+            
+            logger.info(f"✅ Player sprite salvo: {output_path}")
+            return str(output_path)
+            
+        except Exception as e:
+            logger.error(f"❌ Erro ao gerar player sprite: {e}")
+            return ""
+
     def __del__(self):
         """Cleanup resources when object is destroyed."""
         if hasattr(self, 'sdxl_pipeline') and self.sdxl_pipeline:
@@ -1749,6 +2002,7 @@ class AssetGenerator:
                 pass
         """Cleanup on deletion."""
         try:
-            self._save_asset_cache()
+            if hasattr(self, 'asset_cache'):
+                self._save_asset_cache()
         except Exception:
             pass

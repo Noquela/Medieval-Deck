@@ -83,7 +83,34 @@ class MenuScreen:
         logger.info("Menu screen initialized")
         
     def _load_background(self) -> None:
-        """Carrega background do menu gerado por IA com efeito de blur."""
+        """Carrega background do menu melhorado gerado por IA."""
+        try:
+            # Tentar carregar o novo background melhorado primeiro
+            new_bg_path = self.config.assets_generated_dir / "main_menu_bg.png"
+            
+            if new_bg_path.exists():
+                logger.info(f"Carregando background melhorado: {new_bg_path}")
+                # Carregar background melhorado diretamente
+                self.background_surface = pygame.image.load(str(new_bg_path)).convert()
+                self.background_surface = pygame.transform.scale(
+                    self.background_surface, (self.width, self.height)
+                )
+                
+                # Criar overlay escuro sutil para melhorar legibilidade
+                overlay = pygame.Surface((self.width, self.height))
+                overlay.set_alpha(60)  # 25% de transparência
+                overlay.fill((0, 0, 0))
+                self.background_surface.blit(overlay, (0, 0))
+                
+                # Criar versão para blur
+                self.blur_surface = self.background_surface.copy()
+                logger.info("Background melhorado carregado com sucesso")
+                return
+                
+        except Exception as e:
+            logger.warning(f"Erro ao carregar background melhorado: {e}")
+        
+        # Fallback para o sistema antigo se não conseguir carregar o novo
         if not self.asset_generator:
             # Criar background padrão quando IA não está disponível
             self.background_surface = pygame.Surface((self.width, self.height))
