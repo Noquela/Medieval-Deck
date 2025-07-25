@@ -220,11 +220,11 @@ class GameUI:
         elif action == "quit_game":
             self.running = False
         elif action == "back_to_menu":
-            self._transition_to_state(UIState.CLEAN_MENU)
+            self._transition_to_state(UIState.MENU)
         elif action == "confirm_selection":
             self._confirm_character_selection()
         elif action == "back":
-            self._transition_to_state(UIState.CLEAN_MENU)
+            self._transition_to_state(UIState.MENU)
         # Ações da tela cinematográfica
         elif action.startswith("select_"):
             character_id = action.replace("select_", "")
@@ -294,9 +294,9 @@ class GameUI:
             logger.error("Nenhum personagem selecionado")
             
     def _start_new_game(self) -> None:
-        """Start a new game - go to clean character selection."""
+        """Start a new game - go to character selection."""
         logger.info("Starting new game...")
-        self._transition_to_state(UIState.CLEAN_CHARACTER_SELECTION)
+        self._transition_to_state(UIState.CHARACTER_SELECTION)  # Use the original character selection with backgrounds
         
     def _confirm_character_selection(self) -> None:
         """Confirm character selection and start game."""
@@ -394,8 +394,8 @@ class GameUI:
             
     def draw(self) -> None:
         """Draw current screen."""
-        # Clear screen with dark background
-        self.screen.fill((20, 20, 30))  # Dark blue-gray background
+        # REMOVIDO: Clear screen - deixar cada tela gerenciar seu próprio background
+        # self.screen.fill((20, 20, 30))  # Dark blue-gray background
         
         # Draw current screen
         if self.current_state == UIState.CHARACTER_DETAIL:

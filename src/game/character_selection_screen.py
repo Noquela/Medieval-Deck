@@ -244,7 +244,7 @@ class CharacterSelectionScreen:
             if bg_path.exists():
                 try:
                     # Carregar imagem gerada
-                    bg_surface = pygame.image.load(str(bg_path)).convert()
+                    bg_surface = pygame.image.load(str(bg_path)).convert()  # Usar convert() para backgrounds
                     logger.info(f"📐 Tamanho original da imagem: {bg_surface.get_size()}")
                     
                     # Redimensionar para resolução da tela
@@ -466,19 +466,17 @@ class CharacterSelectionScreen:
     
     def draw(self) -> None:
         """Desenha a tela de seleção de personagens."""
+        
         # Desenhar fundo do personagem atual
         current_bg = self.character_backgrounds.get(self.current_character["id"])
+        
         if current_bg:
             self.screen.blit(current_bg, (0, 0))
-            # Log apenas ocasionalmente para não spammar
-            if hasattr(self, '_draw_count'):
-                self._draw_count += 1
-            else:
-                self._draw_count = 1
-                logger.info(f"🎨 Desenhando background para {self.current_character['name']} - tamanho: {current_bg.get_size()}")
+            logger.debug(f"Background desenhado para {self.current_character['name']}")
         else:
             logger.warning(f"❌ Background não encontrado para {self.current_character['name']} (ID: {self.current_character['id']})")
             logger.info(f"🗂️ Backgrounds disponíveis: {list(self.character_backgrounds.keys())}")
+            # ONLY fill screen if no background found
             self.screen.fill(self.current_character["theme_colors"]["background"])
         
         # Desenhar retrato do personagem
