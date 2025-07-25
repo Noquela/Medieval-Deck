@@ -189,6 +189,16 @@ class CombatScreen:
         self.mouse_pos = (0, 0)
         self.last_mouse_pos = (0, 0)
         
+        # Sistema de Drag & Drop (P1)
+        self.dragging_card = None
+        self.drag_start_pos = None
+        self.drag_offset = (0, 0)
+        self.is_dragging = False
+        self.drag_threshold = 5  # pixels mínimos para iniciar drag
+        
+        # Cartas na mão do jogador (simulação para demo P1)
+        self.player_hand = []
+        
         # Assets IA carregados
         self.assets = {}
         
@@ -196,6 +206,7 @@ class CombatScreen:
         self._load_ia_assets()
         self._load_sprite_animations()
         self._setup_zones()
+        self._init_demo_hand()  # Mover para depois de _setup_zones
         self._setup_buttons()
         self._setup_particles()
         self._setup_player_panel()
@@ -361,6 +372,15 @@ class CombatScreen:
         # Zona da mão do jogador (base) - altura 190px
         self.player_hand_zone = pygame.Rect(50, self.height - 220, self.width - 100, 190)
         
+        # Zona de status card (canto superior direito) - 280x150px
+        status_width, status_height = 280, 150
+        self.status_card_zone = pygame.Rect(
+            self.width - status_width - 20,  # 20px margem direita
+            20,  # 20px margem superior
+            status_width,
+            status_height
+        )
+        
         # Cache dos sprites escalados
         self.enemy_sprites = {}
         self.player_sprite = None
@@ -503,6 +523,46 @@ class CombatScreen:
             }
         
         logger.info("Botões configurados com texturas IA")
+        
+    def _init_demo_hand(self):
+        """Inicializa mão de demonstração com cartas para P1 drag & drop."""
+        # Criar cartas de demonstração (estrutura simples para P1)
+        demo_cards = [
+            {"name": "Fireball", "cost": 3, "damage": 4, "type": "spell"},
+            {"name": "Sword Strike", "cost": 2, "damage": 3, "type": "attack"},
+            {"name": "Heal", "cost": 2, "heal": 3, "type": "heal"},
+            {"name": "Lightning Bolt", "cost": 4, "damage": 5, "type": "spell"},
+            {"name": "Shield Block", "cost": 1, "defense": 2, "type": "defense"}
+        ]
+        
+        # Converter para objetos de carta simples
+        slot_width = self.player_hand_zone.width // 5
+        slot_height = self.player_hand_zone.height - 20
+        
+        for i, card_data in enumerate(demo_cards):
+            slot_x = self.player_hand_zone.left + i * slot_width + 10
+            slot_y = self.player_hand_zone.top + 10
+            
+            card = {
+                "data": card_data,
+                "rect": pygame.Rect(slot_x, slot_y, slot_width - 20, slot_height),
+                "original_pos": (slot_x, slot_y),
+                "is_hovered": False,
+                "is_selected": False,
+                "slot_index": i,
+                # P1: Propriedades de animação
+                "hover_offset_y": 0,
+                "target_hover_y": 0,
+                "scale": 1.0,
+                "target_scale": 1.0,
+                "glow_alpha": 0,
+                "target_glow_alpha": 0,
+                "rotation": 0,
+                "target_rotation": 0,
+                "animation_time": 0,
+                "bob_offset": i * 0.5  # Offset para efeito de "breathing" assíncrono
+            }
+            self.player_hand.append(card)
         
     def _setup_particles(self):
         """Configura o sistema de partículas."""
@@ -693,6 +753,9 @@ class CombatScreen:
         if hasattr(self, 'end_turn_button'):
             self.end_turn_button.update(dt)
         
+        # P1: Atualizar animações das cartas
+        self._update_card_animations(dt)
+        
         # Atualizar transições de turno
         if self.turn_transition_active:
             self.turn_transition_timer += dt
@@ -709,6 +772,49 @@ class CombatScreen:
         
         # Atualizar estado do combate
         self._update_combat_state()
+        
+    def _update_card_animations(self, dt: float):
+        """Atualiza animações avançadas das cartas - P1 implementação."""
+        for card in self.player_hand:
+            # Atualizar timer de animação
+            card["animation_time"] += dt
+            
+            # Efeito de "breathing" sutil para cartas não interagidas
+            if not card["is_hovered"] and not card["is_selected"] and not self.is_dragging:
+                bob_amplitude = 2.0  # pixels
+                bob_speed = 1.5 + card["bob_offset"]  # Velocidade ligeiramente diferente para cada carta
+                card["target_hover_y"] = math.sin(card["animation_time"] * bob_speed) * bob_amplitude
+            
+            # Animações de hover
+            if card["is_hovered"] and not self.is_dragging:
+                card["target_hover_y"] = -15  # Subir carta
+                card["target_scale"] = 1.08   # Escalar ligeiramente
+                card["target_glow_alpha"] = 100  # Brilho sutil
+                card["target_rotation"] = math.sin(card["animation_time"] * 3) * 1.5  # Leve oscilação
+            elif card["is_selected"]:
+                card["target_hover_y"] = -10
+                card["target_scale"] = 1.05
+                card["target_glow_alpha"] = 150
+                card["target_rotation"] = 0
+            else:
+                # Reset para estado normal
+                if not card.get("breathing_active", True):  # Manter breathing se não estiver interagindo
+                    card["target_hover_y"] = 0
+                card["target_scale"] = 1.0
+                card["target_glow_alpha"] = 0
+                card["target_rotation"] = 0
+            
+            # Suavização das animações (interpolação exponencial)
+            smooth_factor = 8.0
+            card["hover_offset_y"] += (card["target_hover_y"] - card["hover_offset_y"]) * dt * smooth_factor
+            card["scale"] += (card["target_scale"] - card["scale"]) * dt * smooth_factor
+            card["glow_alpha"] += (card["target_glow_alpha"] - card["glow_alpha"]) * dt * smooth_factor
+            card["rotation"] += (card["target_rotation"] - card["rotation"]) * dt * smooth_factor
+            
+            # Atualizar posição da carta baseada nas animações
+            original_x, original_y = card["original_pos"]
+            card["rect"].x = original_x
+            card["rect"].y = original_y + int(card["hover_offset_y"])
         
     def _update_combat_state(self):
         """Atualiza o estado interno do combate."""
@@ -768,31 +874,32 @@ class CombatScreen:
                 self._handle_right_click(event.pos)
                 return None
                 
+        elif event.type == pygame.MOUSEBUTTONUP:
+            if event.button == 1:  # Left click release
+                self._handle_left_click_release(event.pos)
+                return None
+                
         elif event.type == pygame.MOUSEMOTION:
             self._handle_mouse_motion(event.pos)
             
         return None
         
     def _handle_left_click(self, pos: Tuple[int, int]):
-        """Processa clique esquerdo na interface."""
+        """Processa clique esquerdo na interface - P1 drag & drop implementado."""
         x, y = pos
         
-        # Verificar clique nos botões
+        # Verificar clique nos botões primeiro
         if self.end_turn_button.rect.collidepoint(x, y):
             if self.state == CombatState.PLAYER_TURN:
                 self._end_turn()
             return
             
-        # Verificar clique nos botões
-        if hasattr(self, 'end_turn_button') and self.end_turn_button.rect.collidepoint(x, y):
-            if self.state == CombatState.PLAYER_TURN:
-                self._end_turn()
-            return
-            
-        # Verificar clique na zona da mão do jogador (para futuras implementações)
+        # P1: Verificar clique em cartas da mão para iniciar drag
         if self.state == CombatState.PLAYER_TURN and self.player_hand_zone.collidepoint(x, y):
-            # TODO: Implementar seleção de cartas quando sistema de cartas estiver pronto
-            pass
+            clicked_card = self._get_card_at_position(pos)
+            if clicked_card:
+                self._start_drag(clicked_card, pos)
+            return
                     
         # Verificar clique nos sprites de inimigos (para targeting)
         if self.state == CombatState.TARGET_SELECTION and hasattr(self.combat_engine, 'enemies'):
@@ -807,11 +914,18 @@ class CombatScreen:
             self._cancel_target_selection()
             
     def _handle_mouse_motion(self, pos: Tuple[int, int]):
-        """Processa movimento do mouse para hover effects."""
+        """Processa movimento do mouse - P1 drag & drop e hover effects."""
         x, y = pos
         
         # Armazenar posição do mouse para futuros efeitos de hover
         self.mouse_pos = pos
+        
+        # P1: Processar drag se estiver arrastando uma carta
+        if self.is_dragging and self.dragging_card:
+            self._update_drag(pos)
+        else:
+            # Processar hover effects nas cartas
+            self._update_card_hover(pos)
         
     def _select_card(self, slot: CombatSlot):
         """Seleciona uma carta para uso."""
@@ -893,6 +1007,233 @@ class CombatScreen:
         self.targeted_enemy = None
         self.state = CombatState.CARD_SELECTION
         
+    # ========== P1 DRAG & DROP SYSTEM ==========
+    
+    def _get_card_at_position(self, pos: Tuple[int, int]) -> Optional[dict]:
+        """Retorna a carta na posição especificada."""
+        for card in self.player_hand:
+            if card["rect"].collidepoint(pos):
+                return card
+        return None
+        
+    def _start_drag(self, card: dict, pos: Tuple[int, int]):
+        """Inicia o drag de uma carta."""
+        self.dragging_card = card
+        self.drag_start_pos = pos
+        self.is_dragging = False  # Só ativa após mover além do threshold
+        
+        # Calcular offset do mouse relativo ao centro da carta
+        card_center = card["rect"].center
+        self.drag_offset = (pos[0] - card_center[0], pos[1] - card_center[1])
+        
+        # Marcar carta como selecionada visualmente
+        card["is_selected"] = True
+        
+    def _update_drag(self, pos: Tuple[int, int]):
+        """Atualiza a posição da carta sendo arrastada."""
+        if not self.dragging_card or not self.drag_start_pos:
+            return
+            
+        # Verificar se passou do threshold para iniciar drag
+        if not self.is_dragging:
+            distance = ((pos[0] - self.drag_start_pos[0])**2 + (pos[1] - self.drag_start_pos[1])**2)**0.5
+            if distance >= self.drag_threshold:
+                self.is_dragging = True
+                self.state = CombatState.CARD_SELECTION
+                
+        # Atualizar posição da carta (ajustando pelo offset)
+        if self.is_dragging:
+            new_x = pos[0] - self.drag_offset[0] - self.dragging_card["rect"].width // 2
+            new_y = pos[1] - self.drag_offset[1] - self.dragging_card["rect"].height // 2
+            self.dragging_card["rect"].x = new_x
+            self.dragging_card["rect"].y = new_y
+            
+    def _handle_left_click_release(self, pos: Tuple[int, int]):
+        """Processa soltar o botão esquerdo - finaliza drag & drop."""
+        if self.is_dragging and self.dragging_card:
+            self._end_drag(pos)
+        elif self.dragging_card:
+            # Foi um clique simples, não drag - selecionar carta
+            self._select_card_simple(self.dragging_card)
+            
+        # Reset drag state
+        self._reset_drag_state()
+        
+    def _end_drag(self, pos: Tuple[int, int]):
+        """Finaliza o drag e verifica onde a carta foi solta."""
+        if not self.dragging_card:
+            return
+            
+        # Verificar se foi solta numa zona válida
+        if self.enemy_zone.collidepoint(pos):
+            # Carta solta na zona de inimigos - iniciar targeting
+            self._start_targeting_from_drag(self.dragging_card, pos)
+        else:
+            # Carta solta em local inválido - retornar para posição original
+            self._return_card_to_hand(self.dragging_card)
+            
+    def _start_targeting_from_drag(self, card: dict, pos: Tuple[int, int]):
+        """Inicia sistema de targeting após drag & drop."""
+        # Selecionar a carta para uso
+        self.selected_card = card
+        self.state = CombatState.TARGET_SELECTION
+        
+        # Verificar se há inimigo na posição
+        target_enemy = self._get_enemy_at_position(pos)
+        if target_enemy:
+            # Usar carta diretamente no inimigo
+            self._use_card_on_enemy(card, target_enemy)
+        else:
+            # Entrar em modo de targeting manual
+            logger.info(f"Card {card['data']['name']} requires manual targeting")
+            
+    def _get_enemy_at_position(self, pos: Tuple[int, int]) -> Optional[dict]:
+        """Retorna o inimigo na posição especificada."""
+        if hasattr(self.combat_engine, 'enemies') and self.combat_engine.enemies:
+            # Calcular posições dos inimigos baseado no layout atual
+            enemies = self.combat_engine.enemies
+            col_width = self.enemy_zone.width // len(enemies)
+            
+            for i, enemy in enumerate(enemies):
+                enemy_x = self.enemy_zone.left + col_width // 2 + i * col_width
+                enemy_rect = pygame.Rect(enemy_x - 50, self.enemy_zone.y, 100, self.enemy_zone.height)
+                
+                if enemy_rect.collidepoint(pos):
+                    return {"enemy": enemy, "index": i}
+        return None
+        
+    def _use_card_on_enemy(self, card: dict, target: dict):
+        """Usa carta diretamente em um inimigo."""
+        try:
+            enemy = target["enemy"]
+            logger.info(f"Using {card['data']['name']} on {enemy}")
+            
+            # Simular efeito da carta (implementação simples para P1)
+            if card["data"]["type"] == "spell" or card["data"]["type"] == "attack":
+                damage = card["data"].get("damage", 1)
+                if hasattr(enemy, 'hp'):
+                    enemy.hp = max(0, enemy.hp - damage)
+                    logger.info(f"Enemy took {damage} damage, HP: {enemy.hp}")
+                    
+            # Remover carta da mão
+            self._remove_card_from_hand(card)
+            
+            # Trigger efeitos visuais
+            enemy_pos = self._get_enemy_screen_position(target["index"])
+            self._trigger_damage_particles(enemy_pos)
+            
+        except Exception as e:
+            logger.error(f"Error using card on enemy: {e}")
+        finally:
+            self.state = CombatState.PLAYER_TURN
+            
+    def _get_enemy_screen_position(self, enemy_index: int) -> Tuple[int, int]:
+        """Retorna a posição na tela do inimigo especificado."""
+        if hasattr(self.combat_engine, 'enemies') and self.combat_engine.enemies:
+            enemies = self.combat_engine.enemies
+            col_width = self.enemy_zone.width // len(enemies)
+            enemy_x = self.enemy_zone.left + col_width // 2 + enemy_index * col_width
+            enemy_y = self.enemy_zone.centery
+            return (enemy_x, enemy_y)
+        return (self.enemy_zone.centerx, self.enemy_zone.centery)
+        
+    def _remove_card_from_hand(self, card: dict):
+        """Remove carta da mão do jogador."""
+        if card in self.player_hand:
+            self.player_hand.remove(card)
+            self._reorganize_hand()
+            
+    def _reorganize_hand(self):
+        """Reorganiza as cartas na mão após remoção."""
+        slot_width = self.player_hand_zone.width // 5
+        slot_height = self.player_hand_zone.height - 20
+        
+        for i, card in enumerate(self.player_hand):
+            slot_x = self.player_hand_zone.left + i * slot_width + 10
+            slot_y = self.player_hand_zone.top + 10
+            
+            card["rect"].x = slot_x
+            card["rect"].y = slot_y
+            card["original_pos"] = (slot_x, slot_y)
+            card["slot_index"] = i
+            
+    def _return_card_to_hand(self, card: dict):
+        """Retorna carta para sua posição original na mão."""
+        card["rect"].x, card["rect"].y = card["original_pos"]
+        card["is_selected"] = False
+        
+    def _select_card_simple(self, card: dict):
+        """Seleciona carta com clique simples (sem drag)."""
+        # Implementação simples - destacar carta selecionada
+        for c in self.player_hand:
+            c["is_selected"] = False
+        card["is_selected"] = True
+        self.selected_card = card
+        logger.info(f"Selected card: {card['data']['name']}")
+        
+    def _update_card_hover(self, pos: Tuple[int, int]):
+        """Atualiza efeitos de hover nas cartas."""
+        for card in self.player_hand:
+            was_hovered = card["is_hovered"]
+            card["is_hovered"] = card["rect"].collidepoint(pos)
+            
+            # Log hover changes for debugging
+            if card["is_hovered"] and not was_hovered:
+                logger.debug(f"Hovering: {card['data']['name']}")
+                
+    def _update_card_animations(self, dt: float):
+        """P1: Atualiza animações avançadas das cartas."""
+        import math
+        
+        for card in self.player_hand:
+            # Atualizar timer de animação
+            card["animation_time"] += dt
+            
+            # Definir targets de animação baseados no estado
+            if card["is_hovered"] and not self.is_dragging:
+                card["target_hover_y"] = -20  # Subir mais quando hover
+                card["target_scale"] = 1.1    # Crescer um pouco
+                card["target_glow_alpha"] = 150
+                card["target_rotation"] = 2   # Leve rotação
+            elif card["is_selected"]:
+                card["target_hover_y"] = -10
+                card["target_scale"] = 1.05
+                card["target_glow_alpha"] = 100
+                card["target_rotation"] = 1
+            else:
+                card["target_hover_y"] = 0
+                card["target_scale"] = 1.0
+                card["target_glow_alpha"] = 0
+                card["target_rotation"] = 0
+                
+            # Aplicar interpolação suave (easing)
+            ease_speed = 8.0
+            card["hover_offset_y"] += (card["target_hover_y"] - card["hover_offset_y"]) * dt * ease_speed
+            card["scale"] += (card["target_scale"] - card["scale"]) * dt * ease_speed
+            card["glow_alpha"] += (card["target_glow_alpha"] - card["glow_alpha"]) * dt * ease_speed
+            card["rotation"] += (card["target_rotation"] - card["rotation"]) * dt * ease_speed
+            
+            # Efeito de "breathing" sutil quando não está hover/selected
+            if not card["is_hovered"] and not card["is_selected"]:
+                breathing_intensity = 2
+                bob_speed = 1.5
+                card["hover_offset_y"] += math.sin(card["animation_time"] * bob_speed + card["bob_offset"]) * breathing_intensity
+                
+            # Atualizar posição do rect com offset
+            card["rect"].x = card["original_pos"][0]
+            card["rect"].y = card["original_pos"][1] + int(card["hover_offset_y"])
+                
+    def _reset_drag_state(self):
+        """Reseta o estado de drag & drop."""
+        if self.dragging_card:
+            self.dragging_card["is_selected"] = False
+        self.dragging_card = None
+        self.drag_start_pos = None
+        self.is_dragging = False
+        self.drag_offset = (0, 0)
+        
+    # ========== END P1 DRAG & DROP SYSTEM ==========
+        
     def _end_turn(self):
         """Finaliza o turno do jogador."""
         try:
@@ -930,9 +1271,10 @@ class CombatScreen:
         2. Zona de inimigos com overlay escuro
         3. Sprites de inimigos escalados com grid flexível
         4. Sprite do jogador centralizado
-        5. Zona da mão com slots definidos
-        6. Botões polidos
-        7. Overlays finais
+        5. Status card com informações do jogador
+        6. Zona da mão com slots definidos
+        7. Botões polidos
+        8. Overlays finais
         """
         # 1. Background IA escalado para tela
         self.screen.blit(self.background, (0, 0))
@@ -943,13 +1285,16 @@ class CombatScreen:
         # 3. Sprite do jogador centralizado
         self._draw_player_sprite()
         
-        # 4. Zona da mão do jogador
+        # 4. Status card do jogador
+        self._draw_status_card()
+        
+        # 5. Zona da mão do jogador
         self._draw_player_hand()
         
-        # 5. Botões
+        # 6. Botões
         self._draw_buttons()
         
-        # 6. Debug info (se necessário)
+        # 7. Debug info (se necessário)
         if hasattr(self, 'debug_mode') and self.debug_mode:
             self._draw_debug_info()
             
@@ -1067,28 +1412,237 @@ class CombatScreen:
             )
             self.screen.blit(self.player_sprite, sprite_rect)
             
+    def _draw_status_card(self):
+        """Desenha status card do jogador com HP, mana e recursos."""
+        if not hasattr(self, 'status_card_zone'):
+            return
+            
+        # Fundo do status card com bordas arredondadas
+        status_surface = pygame.Surface(self.status_card_zone.size, pygame.SRCALPHA)
+        
+        # Fundo principal do card (azul-escuro translúcido)
+        pygame.draw.rect(status_surface, (20, 30, 80, 220), status_surface.get_rect(), border_radius=10)
+        
+        # Borda dourada
+        pygame.draw.rect(status_surface, (200, 180, 0), status_surface.get_rect(), 3, border_radius=10)
+        
+        # Blitar o fundo do status card
+        self.screen.blit(status_surface, self.status_card_zone.topleft)
+        
+        # Obter dados do jogador
+        player = None
+        if hasattr(self.combat_engine, 'player'):
+            player = self.combat_engine.player
+        elif hasattr(self, 'player'):
+            player = self.player
+            
+        # Configurações de texto
+        font_large = pygame.font.Font(None, 24)
+        font_medium = pygame.font.Font(None, 20)
+        font_small = pygame.font.Font(None, 16)
+        
+        # Título do card
+        title_text = font_large.render("Status", True, (255, 255, 255))
+        title_rect = title_text.get_rect(centerx=self.status_card_zone.centerx, y=self.status_card_zone.y + 10)
+        self.screen.blit(title_text, title_rect)
+        
+        # Linha divisória
+        line_y = self.status_card_zone.y + 35
+        pygame.draw.line(self.screen, (200, 180, 0), 
+                        (self.status_card_zone.x + 10, line_y), 
+                        (self.status_card_zone.right - 10, line_y), 2)
+        
+        # Desenhar informações do jogador
+        y_offset = 45
+        
+        if player:
+            # HP do jogador
+            if hasattr(player, 'hp') and hasattr(player, 'max_hp'):
+                hp_text = f"HP: {player.hp}/{player.max_hp}"
+                hp_color = self._get_hp_color(player.hp / player.max_hp if player.max_hp > 0 else 0)
+                hp_surface = font_medium.render(hp_text, True, hp_color)
+                self.screen.blit(hp_surface, (self.status_card_zone.x + 15, self.status_card_zone.y + y_offset))
+                
+                # Barra de HP
+                bar_width = self.status_card_zone.width - 30
+                bar_height = 8
+                bar_x = self.status_card_zone.x + 15
+                bar_y = self.status_card_zone.y + y_offset + 20
+                
+                # Fundo da barra
+                pygame.draw.rect(self.screen, (100, 100, 100), (bar_x, bar_y, bar_width, bar_height))
+                
+                # Barra de HP
+                if player.max_hp > 0:
+                    hp_ratio = player.hp / player.max_hp
+                    fill_width = int(bar_width * hp_ratio)
+                    if fill_width > 0:
+                        pygame.draw.rect(self.screen, hp_color, (bar_x, bar_y, fill_width, bar_height))
+                
+                y_offset += 35
+            
+            # Mana/Energia (se existir)
+            if hasattr(player, 'mana') and hasattr(player, 'max_mana'):
+                mana_text = f"Mana: {player.mana}/{player.max_mana}"
+                mana_surface = font_medium.render(mana_text, True, (100, 150, 255))
+                self.screen.blit(mana_surface, (self.status_card_zone.x + 15, self.status_card_zone.y + y_offset))
+                
+                # Barra de Mana
+                bar_x = self.status_card_zone.x + 15
+                bar_y = self.status_card_zone.y + y_offset + 20
+                
+                # Fundo da barra
+                pygame.draw.rect(self.screen, (100, 100, 100), (bar_x, bar_y, bar_width, bar_height))
+                
+                # Barra de Mana
+                if player.max_mana > 0:
+                    mana_ratio = player.mana / player.max_mana
+                    fill_width = int(bar_width * mana_ratio)
+                    if fill_width > 0:
+                        pygame.draw.rect(self.screen, (100, 150, 255), (bar_x, bar_y, fill_width, bar_height))
+                
+                y_offset += 35
+            
+            # Turno atual
+            turn_text = f"Turno: {getattr(self.combat_engine, 'turn_count', 1) if hasattr(self.combat_engine, 'turn_count') else 1}"
+            turn_surface = font_small.render(turn_text, True, (200, 200, 200))
+            self.screen.blit(turn_surface, (self.status_card_zone.x + 15, self.status_card_zone.y + y_offset))
+        else:
+            # Fallback quando não há dados do jogador
+            no_data_text = font_medium.render("Carregando...", True, (150, 150, 150))
+            self.screen.blit(no_data_text, (self.status_card_zone.x + 15, self.status_card_zone.y + y_offset))
+    
+    def _get_hp_color(self, hp_ratio):
+        """Retorna cor baseada na porcentagem de HP."""
+        if hp_ratio > 0.6:
+            return (0, 200, 0)  # Verde
+        elif hp_ratio > 0.3:
+            return (255, 200, 0)  # Amarelo
+        else:
+            return (255, 50, 50)  # Vermelho
+            
     def _draw_player_hand(self):
-        """Desenha zona da mão do jogador com painel e slots."""
+        """Desenha zona da mão do jogador com cartas - P1 advanced animations."""
         # Painel azul-escuro translúcido para a mão
         hand_overlay = pygame.Surface(self.player_hand_zone.size, pygame.SRCALPHA)
         hand_overlay.fill((30, 40, 90, 200))  # Azul-escuro translúcido
         self.screen.blit(hand_overlay, self.player_hand_zone.topleft)
         
-        # Desenhar 5 slots para cartas
-        slot_width = self.player_hand_zone.width // 5
-        slot_height = self.player_hand_zone.height - 20  # Margem interna
+        # P1: Desenhar cartas com animações avançadas
+        font = pygame.font.Font(None, 20)
+        font_small = pygame.font.Font(None, 16)
         
-        for i in range(5):
-            slot_x = self.player_hand_zone.left + i * slot_width + 10
-            slot_y = self.player_hand_zone.top + 10
+        for card in self.player_hand:
+            # P1: Aplicar transformações de animação
+            original_rect = card["rect"]
+            scale = max(0.1, card.get("scale", 1.0))  # Garantir escala mínima
+            rotation = card.get("rotation", 0)
+            glow_alpha = card.get("glow_alpha", 0)
             
-            slot_rect = pygame.Rect(slot_x, slot_y, slot_width - 20, slot_height)
+            # Calcular rect escalado com validação
+            scaled_width = max(1, int(original_rect.width * scale))
+            scaled_height = max(1, int(original_rect.height * scale))
+            scaled_rect = pygame.Rect(0, 0, scaled_width, scaled_height)
+            scaled_rect.center = original_rect.center
             
-            # Outline do slot
-            pygame.draw.rect(self.screen, (80, 80, 80), slot_rect, 2)
+            data = card["data"]
             
-            # Fundo do slot
-            pygame.draw.rect(self.screen, (50, 50, 50, 100), slot_rect)
+            # P1: Cores dinâmicas com glow
+            if card["is_selected"]:
+                border_color = (255, 215, 0)  # Dourado para selecionada
+                bg_color = (70, 80, 120, 220)
+                border_width = 3
+            elif card["is_hovered"]:
+                border_color = (150, 200, 255)  # Azul claro para hover
+                bg_color = (60, 70, 110, 220)
+                border_width = 2
+            else:
+                border_color = (80, 80, 80)  # Cinza normal
+                bg_color = (50, 50, 50, 180)
+                border_width = 1
+                
+            # P1: Criar surface da carta com animações
+            card_surface = pygame.Surface(scaled_rect.size, pygame.SRCALPHA)
+            
+            # Efeito de glow se necessário
+            if glow_alpha > 5:
+                glow_width = max(1, scaled_rect.width + 10)
+                glow_height = max(1, scaled_rect.height + 10)
+                glow_surface = pygame.Surface((glow_width, glow_height), pygame.SRCALPHA)
+                glow_color = (*border_color, int(min(255, max(0, glow_alpha))))
+                pygame.draw.rect(glow_surface, glow_color, glow_surface.get_rect(), border_radius=8)
+                glow_rect = glow_surface.get_rect(center=scaled_rect.center)
+                self.screen.blit(glow_surface, glow_rect.topleft)
+            
+            # Fundo da carta
+            card_surface.fill(bg_color)
+            
+            # P1: Aplicar rotação se necessário
+            if abs(rotation) > 0.1:
+                card_surface = pygame.transform.rotate(card_surface, rotation)
+                # Recalcular posição após rotação
+                rotated_rect = card_surface.get_rect(center=scaled_rect.center)
+                self.screen.blit(card_surface, rotated_rect.topleft)
+                display_rect = rotated_rect
+            else:
+                self.screen.blit(card_surface, scaled_rect.topleft)
+                display_rect = scaled_rect
+            
+            # Borda da carta
+            pygame.draw.rect(self.screen, border_color, display_rect, border_width, border_radius=5)
+            
+            # P1: Escalar texto baseado na escala da carta
+            font_scale = min(scale, 1.2)  # Limitar escala do texto
+            scaled_font_size = int(20 * font_scale)
+            scaled_font_small_size = int(16 * font_scale)
+            
+            if scaled_font_size != 20:
+                scaled_font = pygame.font.Font(None, scaled_font_size)
+                scaled_font_small = pygame.font.Font(None, scaled_font_small_size)
+            else:
+                scaled_font = font
+                scaled_font_small = font_small
+            
+            # Nome da carta
+            name_text = scaled_font.render(data["name"], True, (255, 255, 255))
+            name_rect = name_text.get_rect(centerx=display_rect.centerx, y=display_rect.y + int(5 * scale))
+            self.screen.blit(name_text, name_rect)
+            
+            # Custo da carta (canto superior esquerdo)
+            cost = data.get("cost", 0)
+            cost_text = scaled_font_small.render(f"{cost}", True, (100, 150, 255))
+            self.screen.blit(cost_text, (display_rect.x + int(5 * scale), display_rect.y + int(5 * scale)))
+            
+            # Efeito da carta (centro)
+            effect_y = display_rect.y + int(35 * scale)
+            if "damage" in data:
+                damage_text = scaled_font_small.render(f"DMG: {data['damage']}", True, (255, 100, 100))
+                damage_rect = damage_text.get_rect(centerx=display_rect.centerx, y=effect_y)
+                self.screen.blit(damage_text, damage_rect)
+            elif "heal" in data:
+                heal_text = scaled_font_small.render(f"HEAL: {data['heal']}", True, (100, 255, 100))
+                heal_rect = heal_text.get_rect(centerx=display_rect.centerx, y=effect_y)
+                self.screen.blit(heal_text, heal_rect)
+            elif "defense" in data:
+                def_text = scaled_font_small.render(f"DEF: {data['defense']}", True, (200, 200, 100))
+                def_rect = def_text.get_rect(centerx=display_rect.centerx, y=effect_y)
+                self.screen.blit(def_text, def_rect)
+                
+            # Tipo da carta (parte inferior)
+            type_text = scaled_font_small.render(data["type"].upper(), True, (180, 180, 180))
+            type_rect = type_text.get_rect(centerx=display_rect.centerx, y=display_rect.bottom - int(20 * scale))
+            self.screen.blit(type_text, type_rect)
+            
+        # P1: Visual feedback para drag zone
+        if self.state == CombatState.TARGET_SELECTION or (self.is_dragging and self.dragging_card):
+            # Destacar zona de inimigos como zona de drop válida
+            drop_overlay = pygame.Surface(self.enemy_zone.size, pygame.SRCALPHA)
+            drop_overlay.fill((100, 255, 100, 50))  # Verde translúcido
+            self.screen.blit(drop_overlay, self.enemy_zone.topleft)
+            
+            # Desenhar borda pulsante na zona de drop
+            pulse_alpha = int(128 + 127 * abs(pygame.time.get_ticks() % 1000 - 500) / 500)
+            pygame.draw.rect(self.screen, (100, 255, 100, pulse_alpha), self.enemy_zone, 3)
             
     def _draw_buttons(self):
         """Desenha botões da interface."""
