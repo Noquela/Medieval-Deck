@@ -1455,7 +1455,298 @@ class AssetGenerator:
         
         return generated_paths
 
+    def generate_transparent_character_sprites(self, force_regenerate: bool = False) -> Dict[str, str]:
+        """
+        Gera sprites de personagens com fundo completamente transparente para integração ao background.
+        
+        Args:
+            force_regenerate: Força regeneração mesmo se existir no cache
+            
+        Returns:
+            Dicionário com paths dos sprites transparentes gerados
+        """
+        transparent_sprite_prompts = {
+            "knight_transparent": "full body medieval knight standing pose, golden ornate armor with intricate engravings, heroic stance holding sword, noble proportions, fantasy character art, high detail, transparent background, no background, isolated character, white background removal",
+            
+            "wizard_transparent": "full body arcane wizard standing pose, flowing blue and purple mystical robes with magical symbols, wise elderly appearance with long beard, staff with glowing crystal orb, magical aura particles, fantasy character art, high detail, transparent background, no background, isolated character, white background removal",
+            
+            "assassin_transparent": "full body shadow assassin standing pose, dark leather armor and hooded cloak, mysterious figure with twin daggers, agile athletic build, stealth pose, fantasy character art, high detail, transparent background, no background, isolated character, white background removal"
+        }
+        
+        if not self.sdxl_pipeline:
+            logger.warning("SDXL pipeline não disponível para geração de sprites transparentes")
+            return {}
+            
+        generated_paths = {}
+        
+        # Negative prompt específico para sprites transparentes - remove backgrounds
+        transparent_negative_prompt = (
+            "blurry, low quality, pixelated, cartoon, anime, "
+            "text, watermark, signature, logo, bad anatomy, "
+            "deformed, distorted, ugly, poorly drawn, "
+            "background, scenery, landscape, room, environment, "
+            "furniture, objects, extra limbs, multiple people, "
+            "cropped, partial body, incomplete, white background, "
+            "colored background, gradient background, wall, floor, "
+            "sky, clouds, ground, grass, stone, wood, any background"
+        )
+        
+        for sprite_id, prompt in transparent_sprite_prompts.items():
+            cache_key = f"{sprite_id}_transparent"
+            sprite_path = self.generated_dir / f"{sprite_id}.png"
+            
+            # Verificar se precisa regenerar
+            if not force_regenerate and sprite_path.exists() and cache_key in self.asset_cache:
+                logger.info(f"Usando sprite transparente {sprite_id} do cache: {sprite_path}")
+                generated_paths[sprite_id] = str(sprite_path)
+                continue
+            
+            try:
+                logger.info(f"🎨 Gerando sprite transparente {sprite_id}...")
+                
+                # Carregar modelos se necessário
+                self.sdxl_pipeline.load_models()
+                
+                # Gerar sprite em alta resolução
+                image = self.sdxl_pipeline.generate_image(
+                    prompt=prompt,
+                    negative_prompt=transparent_negative_prompt,
+                    num_inference_steps=80,   # Boa qualidade
+                    guidance_scale=8.5,      # CFG padrão para characters
+                    width=768,               # Aspect ratio vertical para personagem
+                    height=1024
+                )
+                
+                # Aplicar remoção de fundo usando técnicas de processamento de imagem
+                transparent_image = self._remove_background_advanced(image)
+                
+                # Salvar como PNG com transparência
+                transparent_image.save(sprite_path, "PNG", quality=95)
+                
+                # Atualizar cache
+                self.asset_cache[cache_key] = {
+                    "prompt": prompt,
+                    "path": str(sprite_path),
+                    "generated_at": datetime.now().isoformat(),
+                    "type": "transparent_sprite",
+                    "resolution": f"{transparent_image.size[0]}x{transparent_image.size[1]}"
+                }
+                
+                generated_paths[sprite_id] = str(sprite_path)
+                logger.info(f"✅ Sprite transparente {sprite_id} gerado: {sprite_path}")
+                
+            except Exception as e:
+                logger.error(f"❌ Erro ao gerar sprite transparente {sprite_id}: {e}")
+                
+        # Salvar cache
+        self._save_asset_cache()
+        return generated_paths
+
+    def _remove_background_advanced(self, image: PIL.Image.Image) -> PIL.Image.Image:
+        """
+        Remove fundo da imagem usando rembg - biblioteca especializada em remoção de fundo.
+        Inclui pós-processamento para limpar contornos residuais.
+        
+        Args:
+            image: Imagem PIL original
+            
+        Returns:
+            Imagem PIL com fundo transparente limpo
+        """
+        try:
+            from rembg import remove
+            
+            # Converter para bytes para processar com rembg
+            import io
+            input_buffer = io.BytesIO()
+            image.save(input_buffer, format='PNG')
+            input_bytes = input_buffer.getvalue()
+            
+            # Aplicar remoção de fundo usando rembg
+            logger.info("Aplicando remoção de fundo com AI (rembg)...")
+            output_bytes = remove(input_bytes)
+            
+            # Converter de volta para PIL Image
+            output_buffer = io.BytesIO(output_bytes)
+            result = PIL.Image.open(output_buffer).convert("RGBA")
+            
+            # Pós-processamento para limpar contornos
+            result = self._clean_edge_artifacts(result)
+            
+            logger.info("✅ Fundo removido com sucesso usando AI")
+            return result
+            
+        except ImportError:
+            logger.warning("rembg não disponível, usando remoção manual de fundo")
+            return self._remove_background_simple(image)
+        except Exception as e:
+            logger.warning(f"Falha na remoção de fundo com rembg: {e}")
+            # Fallback: tentar remoção simples
+            return self._remove_background_simple(image)
+
+    def _remove_background_simple(self, image: PIL.Image.Image) -> PIL.Image.Image:
+        """
+        Remoção simples de fundo baseada em cor.
+        
+        Args:
+            image: Imagem PIL original
+            
+        Returns:
+            Imagem PIL com fundo transparente
+        """
+        try:
+            # Converter para RGBA
+            if image.mode != "RGBA":
+                image = image.convert("RGBA")
+            
+            # Obter dados dos pixels
+            pixels = image.load()
+            width, height = image.size
+            
+            # Remover pixels brancos e cinzas claros
+            for y in range(height):
+                for x in range(width):
+                    r, g, b, a = pixels[x, y]
+                    
+                    # Se o pixel for muito claro ou muito próximo de branco/cinza
+                    if (r > 240 and g > 240 and b > 240) or \
+                       (r > 200 and g > 200 and b > 200 and abs(r-g) < 20 and abs(r-b) < 20):
+                        pixels[x, y] = (r, g, b, 0)  # Tornar transparente
+            
+            return image
+            
+        except Exception as e:
+            logger.error(f"Falha na remoção simples de fundo: {e}")
+            return image
+
+    def _clean_edge_artifacts(self, image: PIL.Image.Image) -> PIL.Image.Image:
+        """
+        Remove artefatos de borda e contornos residuais da remoção de fundo.
+        
+        Args:
+            image: Imagem PIL com fundo removido
+            
+        Returns:
+            Imagem PIL com bordas limpas
+        """
+        try:
+            import numpy as np
+            from PIL import ImageFilter, ImageEnhance
+            
+            # Converter para RGBA se necessário
+            if image.mode != "RGBA":
+                image = image.convert("RGBA")
+            
+            # 1. Aplicar erosão suave para remover bordas finas
+            alpha = image.split()[-1]  # Canal alpha
+            
+            # Aplicar erosão no canal alpha para remover bordas finas
+            eroded_alpha = alpha.filter(ImageFilter.MinFilter(3))
+            
+            # Suavizar bordas do alpha com blur
+            smooth_alpha = eroded_alpha.filter(ImageFilter.GaussianBlur(radius=1))
+            
+            # 2. Limpar pixels de borda com baixa opacidade
+            pixels = np.array(smooth_alpha)
+            
+            # Remover pixels com alpha muito baixo (artefatos)
+            pixels[pixels < 50] = 0
+            
+            # Suavizar transição nas bordas
+            mask = (pixels > 0) & (pixels < 200)
+            pixels[mask] = np.clip(pixels[mask] * 1.2, 0, 255)
+            
+            # Reconverter para PIL
+            clean_alpha = PIL.Image.fromarray(pixels.astype(np.uint8), mode='L')
+            
+            # 3. Aplicar o alpha limpo de volta à imagem
+            r, g, b, _ = image.split()
+            clean_image = PIL.Image.merge("RGBA", (r, g, b, clean_alpha))
+            
+            # 4. Aplicar filtro de nitidez suave para melhorar definição
+            enhancer = ImageEnhance.Sharpness(clean_image)
+            clean_image = enhancer.enhance(1.1)
+            
+            logger.debug("✅ Contornos residuais removidos")
+            return clean_image
+            
+        except ImportError:
+            logger.warning("NumPy não disponível, pulando limpeza de bordas")
+            return image
+        except Exception as e:
+            logger.warning(f"Erro na limpeza de bordas: {e}")
+            return image
+
+    def process_existing_sprites_remove_background(self, force_regenerate: bool = True) -> Dict[str, str]:
+        """
+        Processa sprites existentes para remover fundo usando rembg.
+        
+        Args:
+            force_regenerate: Força processamento mesmo se arquivo transparente já existe
+            
+        Returns:
+            Dicionário com paths dos sprites processados
+        """
+        sprite_mappings = {
+            "knight_sprite.png": "knight_transparent.png",
+            "wizard_sprite.png": "wizard_transparent.png", 
+            "assassin_sprite.png": "assassin_transparent.png"
+        }
+        
+        processed_paths = {}
+        
+        for original_filename, transparent_filename in sprite_mappings.items():
+            original_path = self.generated_dir / original_filename
+            transparent_path = self.generated_dir / transparent_filename
+            
+            # Verificar se precisa processar
+            if not force_regenerate and transparent_path.exists():
+                logger.info(f"Sprite transparente já existe: {transparent_path}")
+                processed_paths[transparent_filename.replace('.png', '')] = str(transparent_path)
+                continue
+            
+            if not original_path.exists():
+                logger.warning(f"Sprite original não encontrado: {original_path}")
+                continue
+                
+            try:
+                logger.info(f"🎨 Processando {original_filename} para remover fundo...")
+                
+                # Carregar sprite original
+                original_image = PIL.Image.open(original_path)
+                
+                # Aplicar remoção de fundo
+                transparent_image = self._remove_background_advanced(original_image)
+                
+                # Salvar sprite transparente
+                transparent_image.save(transparent_path, "PNG", quality=95)
+                
+                # Atualizar cache
+                cache_key = transparent_filename.replace('.png', '_processed')
+                self.asset_cache[cache_key] = {
+                    "original_path": str(original_path),
+                    "transparent_path": str(transparent_path),
+                    "processed_at": datetime.now().isoformat(),
+                    "type": "background_removal"
+                }
+                
+                processed_paths[transparent_filename.replace('.png', '')] = str(transparent_path)
+                logger.info(f"✅ Sprite transparente criado: {transparent_path}")
+                
+            except Exception as e:
+                logger.error(f"❌ Erro ao processar {original_filename}: {e}")
+        
+        # Salvar cache
+        self._save_asset_cache()
+        return processed_paths
+
     def __del__(self):
+        """Cleanup resources when object is destroyed."""
+        if hasattr(self, 'sdxl_pipeline') and self.sdxl_pipeline:
+            try:
+                self.sdxl_pipeline.unload_models()
+            except:
+                pass
         """Cleanup on deletion."""
         try:
             self._save_asset_cache()

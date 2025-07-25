@@ -145,6 +145,18 @@ Examples:
         help="Regenerate all existing backgrounds in 3440x1440 ultrawide with enhanced prompts"
     )
     
+    parser.add_argument(
+        "--transparent-sprites",
+        action="store_true",
+        help="Generate transparent character sprites for background integration"
+    )
+    
+    parser.add_argument(
+        "--process-sprites",
+        action="store_true",
+        help="Process existing sprites to remove background using AI"
+    )
+    
     return parser
 
 
@@ -423,6 +435,92 @@ def regenerate_hd_backgrounds(
         logging.error(f"Failed to regenerate HD backgrounds: {e}")
 
 
+def generate_transparent_sprites(
+    config: Config,
+    pipeline: Optional[object],
+    force_generate: bool = True
+) -> None:
+    """
+    Gera sprites transparentes de personagens para integração com background.
+    
+    Args:
+        config: Configuration object
+        pipeline: SDXL pipeline
+        force_generate: Force generation even if exists
+    """
+    if pipeline is None:
+        logging.error("AI pipeline not available for transparent sprite generation")
+        return
+        
+    logging.info("🎭 Starting transparent character sprites generation...")
+    
+    try:
+        # Initialize asset generator
+        asset_generator = AssetGenerator(
+            config=config,
+            sdxl_pipeline=pipeline,
+            cache_dir=str(config.assets_cache_dir)
+        )
+        
+        # Generate transparent sprites
+        results = asset_generator.generate_transparent_character_sprites(
+            force_regenerate=force_generate
+        )
+        
+        # Log results
+        if results:
+            total_sprites = len(results)
+            logging.info(f"🎉 Successfully generated {total_sprites} transparent sprites!")
+            
+            for sprite_id, path in results.items():
+                logging.info(f"  {sprite_id}: {path}")
+        else:
+            logging.warning("No transparent sprites were generated")
+        
+    except Exception as e:
+        logging.error(f"Failed to generate transparent sprites: {e}")
+
+
+def process_existing_sprites(
+    config: Config,
+    force_generate: bool = True
+) -> None:
+    """
+    Processa sprites existentes para remover fundo usando AI.
+    
+    Args:
+        config: Configuration object
+        force_generate: Force processing even if transparent versions exist
+    """
+    logging.info("🎨 Starting background removal for existing sprites...")
+    
+    try:
+        # Initialize asset generator (sem pipeline pois não vamos gerar)
+        asset_generator = AssetGenerator(
+            config=config,
+            sdxl_pipeline=None,
+            cache_dir=str(config.assets_cache_dir)
+        )
+        
+        # Process existing sprites
+        results = asset_generator.process_existing_sprites_remove_background(
+            force_regenerate=force_generate
+        )
+        
+        # Log results
+        if results:
+            total_sprites = len(results)
+            logging.info(f"🎉 Successfully processed {total_sprites} sprites!")
+            
+            for sprite_id, path in results.items():
+                logging.info(f"  {sprite_id}: {path}")
+        else:
+            logging.warning("No sprites were processed")
+        
+    except Exception as e:
+        logging.error(f"Failed to process existing sprites: {e}")
+
+
 def main():
     """Main entry point for Medieval Deck game."""
     # Parse command line arguments
@@ -504,6 +602,18 @@ def main():
         if args.regenerate_hd:
             regenerate_hd_backgrounds(config, ai_pipeline, force_generate=True)
             logging.info("HD backgrounds regeneration completed. Exiting without starting game.")
+            return 0
+            
+        # Se for gerar sprites transparentes, sair após gerar
+        if args.transparent_sprites:
+            generate_transparent_sprites(config, ai_pipeline, force_generate=True)
+            logging.info("Transparent sprites generation completed. Exiting without starting game.")
+            return 0
+            
+        # Se for processar sprites existentes, sair após processar
+        if args.process_sprites:
+            process_existing_sprites(config, force_generate=True)
+            logging.info("Sprite processing completed. Exiting without starting game.")
             return 0
             
         # Initialize game engine

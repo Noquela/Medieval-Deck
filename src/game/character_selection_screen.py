@@ -284,36 +284,56 @@ class CharacterSelectionScreen:
         if character_id not in self.character_backgrounds:
             self.character_backgrounds[character_id] = self._create_gradient_background(character)
         
-        # Carregar sprite do personagem gerado por IA
+        # Carregar sprite do personagem transparente gerado por IA
         if character_id not in self.character_portraits:
-            if self.asset_generator:
+            # Primeiro tentar carregar sprite transparente específico
+            transparent_sprite_path = self.config.assets_generated_dir / f"{character_id}_transparent.png"
+            
+            if transparent_sprite_path.exists():
                 try:
-                    logger.info(f"Gerando sprite de {character['name']} com IA...")
+                    logger.info(f"🎭 Carregando sprite transparente: {transparent_sprite_path}")
                     
-                    # Gerar sprite usando IA
-                    sprite_image = self.asset_generator.generate_character_sprite(character['name'])
-                    
-                    if sprite_image:
-                        # Redimensionar sprite para tamanho adequado (mais alto que largo)
-                        sprite_resized = sprite_image.resize((600, 800), Image.LANCZOS)
-                        
-                        # Converter para Surface do Pygame com transparência
-                        mode = sprite_resized.mode
-                        if mode != "RGBA":
-                            sprite_resized = sprite_resized.convert("RGBA")
-                        
-                        size = sprite_resized.size
-                        data = sprite_resized.tobytes()
-                        
-                        sprite_surface = pygame.image.fromstring(data, size, "RGBA").convert_alpha()
-                        
-                        self.character_portraits[character_id] = sprite_surface
-                        logger.info(f"Sprite de {character['name']} gerado com sucesso!")
+                    # Carregar com transparência preservada
+                    sprite_surface = pygame.image.load(str(transparent_sprite_path)).convert_alpha()
+                    self.character_portraits[character_id] = sprite_surface
+                    logger.info(f"✅ Sprite transparente carregado para {character['name']}")
                     
                 except Exception as e:
-                    logger.warning(f"Falha ao gerar sprite de {character['name']}: {e}")
+                    logger.error(f"❌ Erro ao carregar sprite transparente: {e}")
             
-            # Fallback: criar placeholder se não conseguiu gerar sprite
+            # Fallback: tentar sprite normal existente
+            elif (self.config.assets_generated_dir / f"{character_id}_sprite.png").exists():
+                sprite_path = self.config.assets_generated_dir / f"{character_id}_sprite.png"
+                try:
+                    logger.info(f"� Carregando sprite normal: {sprite_path}")
+                    
+                    # Carregar com transparência preservada
+                    sprite_surface = pygame.image.load(str(sprite_path)).convert_alpha()
+                    self.character_portraits[character_id] = sprite_surface
+                    logger.info(f"✅ Sprite normal carregado para {character['name']}")
+                    
+                except Exception as e:
+                    logger.error(f"❌ Erro ao carregar sprite normal: {e}")
+            
+            # Se não encontrou sprites, tentar gerar sprite transparente com IA
+            elif self.asset_generator:
+                try:
+                    logger.info(f"🎨 Gerando sprite transparente de {character['name']} com IA...")
+                    
+                    # Gerar sprites transparentes usando nova função
+                    results = self.asset_generator.generate_transparent_character_sprites(force_regenerate=True)
+                    
+                    # Carregar o sprite recém-gerado
+                    sprite_key = f"{character_id}_transparent"
+                    if sprite_key in results:
+                        sprite_surface = pygame.image.load(results[sprite_key]).convert_alpha()
+                        self.character_portraits[character_id] = sprite_surface
+                        logger.info(f"✅ Sprite transparente de {character['name']} gerado e carregado!")
+                    
+                except Exception as e:
+                    logger.warning(f"⚠️ Falha ao gerar sprite transparente de {character['name']}: {e}")
+            
+            # Fallback: criar placeholder se não conseguiu carregar nem gerar sprite
             if character_id not in self.character_portraits:
                 self.character_portraits[character_id] = self._create_character_placeholder(character)
     
@@ -498,31 +518,64 @@ class CharacterSelectionScreen:
             self.screen.blit(fade_overlay, (0, 0))
     
     def _draw_character_portrait(self):
-        """Desenha o retrato do personagem."""
+        """Desenha o personagem integrado ao background sem moldura."""
         character_id = self.current_character["id"]
         portrait = self.character_portraits.get(character_id)
         
         if portrait:
-            # Efeito de brilho pulsante
-            glow_intensity = int(30 + 20 * math.sin(self.animation_time * 2))
-            primary_color = self.current_character["theme_colors"]["primary"]
+            # Posição do personagem (lado esquerdo da tela, um pouco mais à direita)
+            character_x = 200  # Mais à direita para dar espaço
+            character_y = self.height - portrait.get_height() - 50  # No chão
             
-            # Criar surface de brilho
-            glow_surface = pygame.Surface((
-                portrait.get_width() + 40,
-                portrait.get_height() + 40
-            ), pygame.SRCALPHA)
+            # Redimensionar o personagem para tamanho adequado (um pouco maior)
+            target_height = min(900, int(self.height * 0.65))  # 65% da altura da tela
+            scale_factor = target_height / portrait.get_height()
+            new_width = int(portrait.get_width() * scale_factor)
             
-            pygame.draw.rect(glow_surface, 
-                           (*primary_color, glow_intensity),
-                           glow_surface.get_rect())
+            scaled_portrait = pygame.transform.scale(portrait, (new_width, target_height))
             
-            # Desenhar brilho e retrato
-            glow_rect = glow_surface.get_rect(center=self.portrait_area.center)
-            portrait_rect = portrait.get_rect(center=self.portrait_area.center)
+            # Ajustar posição Y para o personagem ficar no chão
+            character_y = self.height - target_height - 30
             
-            self.screen.blit(glow_surface, glow_rect)
-            self.screen.blit(portrait, portrait_rect)
+            # Criar sombra elíptica sutil no chão
+            shadow_width = int(new_width * 0.8)
+            shadow_height = int(shadow_width * 0.3)  # Sombra achatada
+            shadow_x = character_x + (new_width - shadow_width) // 2
+            shadow_y = self.height - 40  # Próximo ao chão
+            
+            # Surface para a sombra com transparência
+            shadow_surface = pygame.Surface((shadow_width, shadow_height), pygame.SRCALPHA)
+            
+            # Criar gradiente de sombra (mais escuro no centro)
+            for i in range(shadow_height):
+                alpha = int(50 * (1 - (i / shadow_height) * 0.5))  # Gradiente vertical suave
+                pygame.draw.ellipse(shadow_surface, (0, 0, 0, alpha), 
+                                  (0, i, shadow_width, shadow_height - i))
+            
+            # Desenhar a sombra no chão
+            self.screen.blit(shadow_surface, (shadow_x, shadow_y))
+            
+            # Efeito de aura sutil ao redor do personagem (opcional)
+            if hasattr(self, 'animation_time'):
+                aura_intensity = int(15 + 10 * math.sin(self.animation_time * 1.5))
+                primary_color = self.current_character["theme_colors"]["primary"]
+                
+                # Aura muito sutil
+                aura_surface = pygame.Surface((new_width + 20, target_height + 20), pygame.SRCALPHA)
+                aura_rect = pygame.Rect(10, 10, new_width, target_height)
+                
+                # Aura com bordas suaves
+                for i in range(5):
+                    alpha = max(0, aura_intensity - i * 3)
+                    expanded_rect = aura_rect.inflate(i * 4, i * 4)
+                    pygame.draw.rect(aura_surface, (*primary_color, alpha), expanded_rect, 2)
+                
+                # Desenhar aura
+                aura_pos = (character_x - 10, character_y - 10)
+                self.screen.blit(aura_surface, aura_pos)
+            
+            # Desenhar o personagem (sem moldura, integrado ao cenário)
+            self.screen.blit(scaled_portrait, (character_x, character_y))
     
     def _draw_info_panel(self):
         """Desenha o painel de informações do personagem."""
