@@ -1264,6 +1264,197 @@ class AssetGenerator:
         
         return results
 
+    def regenerate_all_backgrounds_hd_ultrawide(self, force_regenerate: bool = True) -> Dict[str, str]:
+        """
+        Regenera todos os backgrounds existentes em 3440x1440 ultrawide com prompts melhorados.
+        
+        Args:
+            force_regenerate: Força regeneração de todos os backgrounds
+            
+        Returns:
+            Dicionário com paths dos backgrounds regenerados
+        """
+        logger.info("🎬 Iniciando regeneração HD ultrawide (3440x1440)...")
+        
+        # Prompts melhorados para personagens (só cenários)
+        enhanced_character_prompts = {
+            "knight": {
+                "prompt": "masterpiece, high quality, detailed, medieval castle courtyard at golden hour, stone walls with banners, training grounds, armory in background, dramatic lighting, gothic architecture, epic cinematic composition, wide panoramic view",
+                "negative": "people, person, human, character, figure, knight, warrior, armor, weapons, face, body"
+            },
+            "wizard": {
+                "prompt": "masterpiece, high quality, detailed, ancient magical tower library, floating mystical orbs, arcane symbols glowing on walls, enchanted bookshelves, crystal formations, magical energy streams, atmospheric lighting, wide panoramic mystical scene",
+                "negative": "people, person, human, character, figure, wizard, mage, face, body, hands"
+            },
+            "assassin": {
+                "prompt": "masterpiece, high quality, detailed, dark medieval alleyway at night, stone buildings with shadows, moonlight filtering through narrow passages, mysterious fog, lanterns casting eerie light, gothic architecture, cinematic wide view",
+                "negative": "people, person, human, character, figure, assassin, rogue, face, body, weapons"
+            }
+        }
+        
+        # Prompts para outros backgrounds
+        enhanced_general_prompts = {
+            "menu": {
+                "prompt": "masterpiece, high quality, detailed, grand medieval throne room, ornate stone architecture, stained glass windows, royal banners hanging, dramatic lighting from torches, majestic hall perspective, cinematic ultrawide composition",
+                "negative": "people, person, human, character, figure, face, body"
+            },
+            "castle": {
+                "prompt": "masterpiece, high quality, detailed, medieval castle on hilltop at sunset, massive stone walls, multiple towers with flags, dramatic clouds, golden hour lighting, epic landscape vista, cinematic ultrawide panorama",
+                "negative": "people, person, human, character, figure, face, body"
+            },
+            "forest": {
+                "prompt": "masterpiece, high quality, detailed, ancient enchanted forest, massive oak trees, mystical fog filtering sunlight, moss-covered stones, magical atmosphere, fantasy woodland, cinematic wide forest scene",
+                "negative": "people, person, human, character, figure, face, body"
+            }
+        }
+        
+        generated_paths = {}
+        
+        # Parâmetros para geração HD ultrawide
+        hd_params = {
+            "width": 3440,
+            "height": 1440,
+            "num_inference_steps": 35,  # Balanceando qualidade e velocidade
+            "guidance_scale": 8.5
+        }
+        
+        # Regenerar backgrounds de personagens
+        logger.info("🏰 Regenerando backgrounds de personagens...")
+        for char_name, prompts in enhanced_character_prompts.items():
+            try:
+                logger.info(f"Gerando background HD para {char_name}...")
+                
+                # Usar prompt diretamente (já está otimizado para cenários)
+                optimized_prompt = prompts["prompt"]
+                
+                # Gerar hash para caching
+                prompt_hash = self._generate_prompt_hash(optimized_prompt, hd_params)
+                
+                # Definir path de saída
+                output_filename = f"{char_name}_bg_hd_3440x1440.png"
+                output_path = self.generated_dir / output_filename
+                
+                # Verificar se precisa gerar
+                if not force_regenerate and output_path.exists():
+                    logger.info(f"Background HD {char_name} já existe, pulando...")
+                    generated_paths[char_name] = str(output_path)
+                    continue
+                
+                # Gerar imagem
+                logger.info(f"🎨 Gerando {char_name} em 3440x1440...")
+                image = self.sdxl_pipeline.generate_image(
+                    prompt=optimized_prompt,
+                    negative_prompt=prompts["negative"],
+                    **hd_params
+                )
+                
+                # Salvar
+                image.save(output_path, quality=95, optimize=True)
+                
+                # Atualizar cache
+                cache_entry = {
+                    "prompt": optimized_prompt,
+                    "negative_prompt": prompts["negative"],
+                    "params": hd_params,
+                    "generated_at": datetime.now().isoformat(),
+                    "file_path": str(output_path),
+                    "resolution": "3440x1440",
+                    "type": "character_background_hd"
+                }
+                self.asset_cache[prompt_hash] = cache_entry
+                
+                generated_paths[char_name] = str(output_path)
+                logger.info(f"✅ Background HD {char_name} gerado: {output_path}")
+                
+                # Copiar para arquivo padrão do jogo (substituindo o antigo)
+                standard_path = self.generated_dir / f"{char_name}_bg.png"
+                if standard_path.exists():
+                    # Backup do antigo
+                    backup_path = self.generated_dir / f"{char_name}_bg_backup_1024.png"
+                    standard_path.rename(backup_path)
+                    logger.info(f"📦 Backup criado: {backup_path}")
+                
+                # Copiar HD como padrão
+                image.save(standard_path, quality=95, optimize=True)
+                logger.info(f"🔄 Substituído background padrão: {standard_path}")
+                
+            except Exception as e:
+                logger.error(f"Erro ao gerar background HD {char_name}: {e}")
+        
+        # Regenerar outros backgrounds importantes
+        logger.info("🎭 Regenerando backgrounds gerais...")
+        for bg_name, prompts in enhanced_general_prompts.items():
+            try:
+                logger.info(f"Gerando background HD para {bg_name}...")
+                
+                # Usar prompt diretamente (já está otimizado para cenários)
+                optimized_prompt = prompts["prompt"]
+                
+                # Gerar hash para caching
+                prompt_hash = self._generate_prompt_hash(optimized_prompt, hd_params)
+                
+                # Definir path de saída
+                output_filename = f"{bg_name}_hd_3440x1440.png"
+                output_path = self.generated_dir / output_filename
+                
+                # Verificar se precisa gerar
+                if not force_regenerate and output_path.exists():
+                    logger.info(f"Background HD {bg_name} já existe, pulando...")
+                    generated_paths[bg_name] = str(output_path)
+                    continue
+                
+                # Gerar imagem
+                logger.info(f"🎨 Gerando {bg_name} em 3440x1440...")
+                image = self.sdxl_pipeline.generate_image(
+                    prompt=optimized_prompt,
+                    negative_prompt=prompts["negative"],
+                    **hd_params
+                )
+                
+                # Salvar
+                image.save(output_path, quality=95, optimize=True)
+                
+                # Atualizar cache
+                cache_entry = {
+                    "prompt": optimized_prompt,
+                    "negative_prompt": prompts["negative"],
+                    "params": hd_params,
+                    "generated_at": datetime.now().isoformat(),
+                    "file_path": str(output_path),
+                    "resolution": "3440x1440",
+                    "type": "general_background_hd"
+                }
+                self.asset_cache[prompt_hash] = cache_entry
+                
+                generated_paths[bg_name] = str(output_path)
+                logger.info(f"✅ Background HD {bg_name} gerado: {output_path}")
+                
+                # Para menu_background, também substituir o padrão
+                if bg_name == "menu":
+                    standard_path = self.generated_dir / "menu_background.png"
+                    if standard_path.exists():
+                        backup_path = self.generated_dir / "menu_background_backup_1024.png"
+                        standard_path.rename(backup_path)
+                        logger.info(f"📦 Backup menu criado: {backup_path}")
+                    
+                    image.save(standard_path, quality=95, optimize=True)
+                    logger.info(f"🔄 Substituído menu background: {standard_path}")
+                
+            except Exception as e:
+                logger.error(f"Erro ao gerar background HD {bg_name}: {e}")
+        
+        # Salvar cache
+        self._save_asset_cache()
+        
+        # Relatório final
+        total_generated = len(generated_paths)
+        logger.info(f"🎉 Regeneração HD ultrawide completa!")
+        logger.info(f"📊 {total_generated} backgrounds regenerados em 3440x1440")
+        logger.info(f"🎯 Arquivos padrão do jogo atualizados automaticamente")
+        logger.info(f"📦 Backups dos arquivos antigos criados")
+        
+        return generated_paths
+
     def __del__(self):
         """Cleanup on deletion."""
         try:

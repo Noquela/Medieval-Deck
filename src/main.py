@@ -63,13 +63,13 @@ Examples:
     parser.add_argument(
         "--config-dir",
         type=str,
-        help="Directory containing configuration files"
+        help="Directory containing configuration de s"
     )
     
     parser.add_argument(
         "--generate-assets",
         action="store_true",
-        help="Generate AI backgrounds for all cards before starting game"
+        help="Generate AI backgrounds for all carde efore starting game"
     )
     
     parser.add_argument(
@@ -81,7 +81,7 @@ Examples:
     parser.add_argument(
         "--no-ai",
         action="store_true",
-        help="Disable AI generation and use placeholder backgrounds"
+        help="Disable AI generation and use placede er backgrounds"
     )
     
     parser.add_argument(
@@ -137,6 +137,12 @@ Examples:
         "--cinematic-assets",
         action="store_true", 
         help="Generate all cinematic assets (4K backgrounds, sprites, UI elements)"
+    )
+    
+    parser.add_argument(
+        "--regenerate-hd",
+        action="store_true",
+        help="Regenerate all existing backgrounds in 3440x1440 ultrawide with enhanced prompts"
     )
     
     return parser
@@ -371,6 +377,52 @@ def generate_cinematic_assets(
         logging.error(f"Failed to generate cinematic assets: {e}")
 
 
+def regenerate_hd_backgrounds(
+    config: Config,
+    pipeline: Optional[object],
+    force_generate: bool = True
+) -> None:
+    """
+    Regenera todos os backgrounds existentes em 3440x1440 ultrawide com prompts melhorados.
+    
+    Args:
+        config: Configuration object
+        pipeline: SDXL pipeline
+        force_generate: Force generation even if exists
+    """
+    if pipeline is None:
+        logging.error("AI pipeline not available for HD background regeneration")
+        return
+        
+    logging.info("🎬 Starting HD background regeneration (3440x1440)...")
+    
+    try:
+        # Initialize asset generator
+        asset_generator = AssetGenerator(
+            config=config,
+            sdxl_pipeline=pipeline,
+            cache_dir=str(config.assets_cache_dir)
+        )
+        
+        # Regenerate all backgrounds in HD ultrawide
+        results = asset_generator.regenerate_all_backgrounds_hd_ultrawide(
+            force_regenerate=force_generate
+        )
+        
+        # Log results
+        if results:
+            total_assets = len(results)
+            logging.info(f"🎉 Successfully regenerated {total_assets} HD backgrounds!")
+            
+            for asset_type, assets in results.items():
+                logging.info(f"  {asset_type}: {assets}")
+        else:
+            logging.warning("No HD backgrounds were regenerated")
+        
+    except Exception as e:
+        logging.error(f"Failed to regenerate HD backgrounds: {e}")
+
+
 def main():
     """Main entry point for Medieval Deck game."""
     # Parse command line arguments
@@ -446,6 +498,12 @@ def main():
         if args.cinematic_assets:
             generate_cinematic_assets(config, ai_pipeline, force_generate=True)
             logging.info("Cinematic assets generation completed. Exiting without starting game.")
+            return 0
+            
+        # Se for regenerar backgrounds em HD ultrawide, sair após gerar
+        if args.regenerate_hd:
+            regenerate_hd_backgrounds(config, ai_pipeline, force_generate=True)
+            logging.info("HD backgrounds regeneration completed. Exiting without starting game.")
             return 0
             
         # Initialize game engine
