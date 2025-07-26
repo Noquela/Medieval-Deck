@@ -21,9 +21,6 @@ from ..core.mvp_turn_engine import MVPTurnEngine, MVPPlayer, MVPEnemy
 logger = logging.getLogger(__name__)
 
 
-# ParticleEmitter class removed to fix color argument issues
-
-
 class Camera:
     """Simple camera shake system."""
     
@@ -91,9 +88,9 @@ class MVPCombatScreen:
         }
         
         self.fonts = {
-            "large": pygame.font.Font(None, 36),
-            "medium": pygame.font.Font(None, 24),
-            "small": pygame.font.Font(None, 18)
+            "large": pygame.font.Font(None, 48),    # Era 36 -> Aumentado para 4K
+            "medium": pygame.font.Font(None, 32),   # Era 24 -> Aumentado para 4K
+            "small": pygame.font.Font(None, 24)     # Era 18 -> Aumentado para 4K
         }
         
         # Create layout zones
@@ -383,10 +380,6 @@ class MVPCombatScreen:
                         "duration": 1000,  # 1 second
                         "color": (255, 100, 100)  # Red for damage
                     })
-                    
-                    # Create particle effect on enemy
-                    # emitter = ParticleEmitter(enemy_pos, particle_count=10, color=(255, 100, 100), duration=600)
-                    # self.emitters.append(emitter)  # Temporarily disabled
                 
                 # Create healing number
                 if card.heal > 0:
@@ -416,37 +409,8 @@ class MVPCombatScreen:
         except Exception as e:
             logger.error(f"Error playing card {card.name}: {e}")
     
-    def draw_text_outline(self, surface, text, pos, font, color):
-        """Draw text with outline."""
-        x, y = pos
-        # Outline
-        outline_color = (0, 0, 0)
-        for dx in [-1, 0, 1]:
-            for dy in [-1, 0, 1]:
-                if dx != 0 or dy != 0:
-                    outline_surf = font.render(text, True, outline_color)
-                    surface.blit(outline_surf, (x + dx, y + dy))
-        # Main text
-        text_surf = font.render(text, True, color)
-        surface.blit(text_surf, pos)
-    
-    def draw_health_bar(self, surface, rect, current, maximum):
-        """Draw health bar."""
-        # Background
-        pygame.draw.rect(surface, (100, 50, 50), rect)
-        pygame.draw.rect(surface, self.colors["border"], rect, 2)
-        
-        # Fill
-        if maximum > 0:
-            fill_width = int((current / maximum) * (rect.width - 4))
-            fill_rect = pygame.Rect(rect.x + 2, rect.y + 2, fill_width, rect.height - 4)
-            pygame.draw.rect(surface, self.colors["hp_red"], fill_rect)
-    
     def update(self, dt: float) -> None:
         """Update combat screen with all enhancements."""
-        # Clear emitters to prevent particle color errors
-        self.emitters.clear()
-        
         current_time = pygame.time.get_ticks()
         
         # Update camera shake
@@ -456,11 +420,6 @@ class MVPCombatScreen:
         if self.card_animation:
             elapsed = current_time - self.card_animation["start_time"]
             if elapsed >= self.card_animation["duration"]:
-                # Create particle effect when card animation ends
-                pos = self.card_animation["target_pos"]
-                # emitter = ParticleEmitter(pos, particle_count=15, color=(255, 215, 0), duration=800)
-                # self.emitters.append(emitter)  # Temporarily disabled
-                
                 # Set player to attack animation
                 self.player_anim_state = "attack"
                 self.player_anim_timer = current_time
@@ -474,12 +433,6 @@ class MVPCombatScreen:
                 self.player_anim_state = "idle"
                 self.player_anim_timer = current_time
         
-        # Update particle emitters (temporarily disabled)
-        # for emitter in self.emitters[:]:
-        #     emitter.update(dt)
-        #     if not emitter.alive:
-        #         self.emitters.remove(emitter)
-        
         # Update floating numbers
         for float_num in self.float_numbers[:]:  # Copy list to avoid modification during iteration
             elapsed = current_time - float_num["start_time"]
@@ -491,402 +444,55 @@ class MVPCombatScreen:
                 float_num["pos"][1] -= dt * 50  # Move up 50 pixels per second
     
     def draw(self) -> None:
-        """Draw the combat screen with camera shake."""
+        """Draw the combat screen with layer management system."""
         # Apply camera shake to all rendering
         shake_offset = Camera.shake_offset
         
-        # Create a surface for shake effect
-        temp_surface = pygame.Surface((self.width, self.height))
+        # Create layer surfaces for proper draw order
+        layer_bg = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
+        layer_mid = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
+        layer_ui = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
         
-        # Background
+        # === LAYER BG: Background and environment ===
         current_bg = self.biomes[self.current_biome]["background"]
         if current_bg:
-            temp_surface.blit(current_bg, (0, 0))
+            layer_bg.blit(current_bg, (0, 0))
         else:
-            temp_surface.fill(self.colors["background"])
+            layer_bg.fill(self.colors["background"])
         
+        # === LAYER MID: Game entities (cards, enemies, particles) ===
         # Enemy zone
-        self._render_enemy_zone_to_surface(temp_surface)
+        self._render_enemy_zone_to_surface(layer_mid)
         
         # Player hand
-        self._render_hand_to_surface(temp_surface)
-        
-        # Status HUD
-        self._render_status_hud_to_surface(temp_surface)
-        
-        # Draw particle emitters (COMPLETELY DISABLED)
-        # Clear any remaining emitters to prevent crashes
-        self.emitters.clear()
-        # for emitter in self.emitters:
-        #     emitter.draw(temp_surface)
-        
-        # Controls help
-        self._render_controls_to_surface(temp_surface)
+        self._render_hand_to_surface(layer_mid)
         
         # Render floating numbers
-        self._render_floating_numbers_to_surface(temp_surface)
+        self._render_floating_numbers_to_surface(layer_mid)
         
         # Render card animation
         if self.card_animation:
-            self._render_card_animation_to_surface(temp_surface)
+            self._render_card_animation_to_surface(layer_mid)
+        
+        # === LAYER UI: Interface elements ===
+        # Status HUD
+        self._render_status_hud_to_surface(layer_ui)
+        
+        # === COMPOSITING: Blend layers with shake ===
+        # Create final surface
+        final_surface = pygame.Surface((self.width, self.height))
+        
+        # Composite layers in order
+        final_surface.blit(layer_bg, (0, 0))
+        final_surface.blit(layer_mid, (0, 0))  # Simple alpha blending
+        final_surface.blit(layer_ui, (0, 0))   # Simple alpha blending
         
         # Apply shake and blit to main screen
-        self.screen.blit(temp_surface, shake_offset)
+        self.screen.blit(final_surface, shake_offset)
         
-        # Game over overlay (no shake)
+        # Game over overlay (no shake, always on top)
         if self.game_over:
             self._render_game_over()
-            self._render_card_animation()
-    
-    def _render_enemy_zone(self):
-        """Render enemy zone."""
-        enemy_zone = self.zones["enemy"]
-        
-        # Enemy info
-        biome_info = self.biomes[self.current_biome]
-        enemy_name = biome_info["enemy_type"]
-        
-        # Enemy title
-        self.draw_text_outline(
-            self.screen,
-            enemy_name,
-            (enemy_zone.centerx, enemy_zone.y + 20),
-            self.fonts["large"],
-            self.colors["text_light"]
-        )
-        
-        # Enemy stats
-        enemy_hp = self.enemy.current_hp
-        enemy_max_hp = self.enemy.max_hp
-        
-        # HP bar
-        hp_rect = pygame.Rect(enemy_zone.centerx - 100, enemy_zone.y + 60, 200, 20)
-        self.draw_health_bar(self.screen, hp_rect, enemy_hp, enemy_max_hp)
-        
-        # HP text
-        hp_text = f"HP: {enemy_hp}/{enemy_max_hp}"
-        self.draw_text_outline(
-            self.screen,
-            hp_text,
-            (enemy_zone.centerx, enemy_zone.y + 90),
-            self.fonts["medium"],
-            self.colors["text_light"]
-        )
-        
-        # Enemy intent (shows next action)
-        if hasattr(self.enemy, 'intent') and hasattr(self.enemy, 'intent_icon'):
-            intent_y = enemy_zone.y + 120
-            
-            # Draw icon if available
-            if self.intent_icons and self.enemy.intent in self.intent_icons:
-                icon = self.intent_icons[self.enemy.intent]
-                icon_rect = icon.get_rect(center=(enemy_zone.centerx - 20, intent_y))
-                self.screen.blit(icon, icon_rect)
-                
-                # Value text next to icon
-                intent_color = (255, 100, 100) if self.enemy.intent == "attack" else (100, 100, 255)
-                value_text = str(self.enemy.intent_value)
-                self.draw_text_outline(
-                    self.screen,
-                    value_text,
-                    (enemy_zone.centerx + 10, intent_y),
-                    self.fonts["medium"],
-                    intent_color
-                )
-            else:
-                # Fallback to text only
-                intent_text = f"{self.enemy.intent_icon} {self.enemy.intent_value}"
-                intent_color = (255, 100, 100) if self.enemy.intent == "attack" else (100, 100, 255)
-                self.draw_text_outline(
-                    self.screen,
-                    intent_text,
-                    (enemy_zone.centerx, intent_y),
-                    self.fonts["medium"],
-                    intent_color
-                )
-    
-    def _render_hand(self):
-        """Render player hand."""
-        hand_zone = self.zones["hand"]
-        
-        if not self.hand.cards:
-            no_cards_text = "No cards in hand"
-            self.draw_text_outline(
-                self.screen,
-                no_cards_text,
-                hand_zone.center,
-                self.fonts["medium"],
-                self.colors["text_light"]
-            )
-            return
-        
-        # Get mouse position for hover detection
-        mouse_pos = pygame.mouse.get_pos()
-        
-        # Calculate card positions
-        card_width = 120
-        card_height = 80
-        spacing = 10
-        total_width = len(self.hand.cards) * card_width + (len(self.hand.cards) - 1) * spacing
-        start_x = hand_zone.centerx - total_width // 2
-        
-        for i, card in enumerate(self.hand.cards):
-            x = start_x + i * (card_width + spacing)
-            y = hand_zone.y + (hand_zone.height - card_height) // 2
-            
-            # Card rect
-            card_rect = pygame.Rect(x, y, card_width, card_height)
-            
-            # Check hover
-            hover = card_rect.collidepoint(mouse_pos)
-            
-            # Card background (different color if selected)
-            if i == self.selected_card_index:
-                color = self.colors["selected"]
-            else:
-                color = self.colors["card_bg"]
-            
-            # Hover glow effect
-            if hover:
-                glow = pygame.Surface((card_width + 10, card_height + 10), pygame.SRCALPHA)
-                alpha = int((math.sin(pygame.time.get_ticks() * 0.02) + 1) * 60)
-                glow.fill((212, 180, 106, alpha))
-                glow_rect = glow.get_rect(center=card_rect.center)
-                self.screen.blit(glow, glow_rect.topleft, special_flags=pygame.BLEND_RGBA_ADD)
-            
-            pygame.draw.rect(self.screen, color, card_rect)
-            pygame.draw.rect(self.screen, self.colors["border"], card_rect, 2)
-            
-            # Card name
-            self.draw_text_outline(
-                self.screen,
-                card.name,
-                (card_rect.centerx, card_rect.y + 15),
-                self.fonts["small"],
-                self.colors["text_light"]
-            )
-            
-            # Card cost
-            cost_text = f"Mana: {card.mana_cost}"
-            self.draw_text_outline(
-                self.screen,
-                cost_text,
-                (card_rect.centerx, card_rect.y + 35),
-                self.fonts["small"],
-                self.colors["mana_blue"]
-            )
-            
-            # Card effect
-            effect_text = ""
-            if card.damage > 0:
-                effect_text = f"Damage: {card.damage}"
-            elif card.block > 0:
-                effect_text = f"Block: {card.block}"
-            elif card.heal > 0:
-                effect_text = f"Heal: {card.heal}"
-                
-            if effect_text:
-                self.draw_text_outline(
-                    self.screen,
-                    effect_text,
-                    (card_rect.centerx, card_rect.y + 55),
-                    self.fonts["small"],
-                    self.colors["text_light"]
-                )
-    
-    def _render_status_hud(self):
-        """Render status HUD."""
-        status_zone = self.zones["status_hud"]
-        
-        # Player stats
-        player_hp = self.player.current_hp
-        player_max_hp = self.player.max_hp
-        player_mana = self.player.current_mana
-        player_max_mana = self.player.max_mana
-        
-        # Character info
-        char_text = f"Character: {self.character_id.title()}"
-        self.draw_text_outline(
-            self.screen,
-            char_text,
-            (status_zone.x + 10, status_zone.y + 10),
-            self.fonts["medium"],
-            self.colors["text_light"]
-        )
-        
-        # HP
-        hp_text = f"HP: {player_hp}/{player_max_hp}"
-        self.draw_text_outline(
-            self.screen,
-            hp_text,
-            (status_zone.x + 10, status_zone.y + 35),
-            self.fonts["medium"],
-            self.colors["hp_red"]
-        )
-        
-        # Mana with visual bar
-        mana_text = f"Mana: {player_mana}/{player_max_mana}"
-        self.draw_text_outline(
-            self.screen,
-            mana_text,
-            (status_zone.x + 10, status_zone.y + 60),
-            self.fonts["medium"],
-            self.colors["mana_blue"]
-        )
-        
-        # Mana bar
-        bar_width = 200
-        bar_height = 8
-        bar_x = status_zone.x + 10
-        bar_y = status_zone.y + 80
-        
-        # Background
-        pygame.draw.rect(self.screen, (50, 50, 50), (bar_x, bar_y, bar_width, bar_height))
-        
-        # Fill based on current mana
-        if player_max_mana > 0:
-            mana_ratio = player_mana / player_max_mana
-            fill_width = int(bar_width * mana_ratio)
-            pygame.draw.rect(self.screen, self.colors["mana_blue"], (bar_x, bar_y, fill_width, bar_height))
-        
-        # Border
-        pygame.draw.rect(self.screen, self.colors["border"], (bar_x, bar_y, bar_width, bar_height), 1)
-        
-        # Block (if any)
-        if hasattr(self.player, 'block') and self.player.block > 0:
-            block_text = f"Block: {self.player.block}"
-            self.draw_text_outline(
-                self.screen,
-                block_text,
-                (status_zone.x + 150, status_zone.y + 35),
-                self.fonts["medium"],
-                (150, 150, 255)  # Blue for block
-            )
-        
-        # Current biome
-        biome_text = f"Biome: {self.biomes[self.current_biome]['name']}"
-        self.draw_text_outline(
-            self.screen,
-            biome_text,
-            (status_zone.x + 10, status_zone.y + 105),
-            self.fonts["medium"],
-            self.colors["text_light"]
-        )
-    
-    def _render_controls(self):
-        """Render controls help."""
-        controls = [
-            "Controls:",
-            "← → : Select card",
-            "SPACE : Play card",
-            "ENTER : End turn",
-            "TAB : Switch biome",
-            "R : Restart combat",
-            "ESC : Back to menu"
-        ]
-        
-        y_start = self.height - len(controls) * 20 - 10
-        
-        for i, control in enumerate(controls):
-            self.draw_text_outline(
-                self.screen,
-                control,
-                (10, y_start + i * 20),
-                self.fonts["small"],
-                self.colors["text_light"]
-            )
-    
-    def _render_game_over(self):
-        """Render game over overlay."""
-        # Semi-transparent overlay
-        overlay = pygame.Surface((self.width, self.height))
-        overlay.set_alpha(150)
-        overlay.fill((0, 0, 0))
-        self.screen.blit(overlay, (0, 0))
-        
-        # Game over text
-        if self.victory:
-            main_text = "VICTORY!"
-            sub_text = "You defeated the enemy!"
-            color = (0, 255, 0)
-        else:
-            main_text = "DEFEAT!"
-            sub_text = "You have been defeated!"
-            color = (255, 0, 0)
-        
-        # Main text
-        self.draw_text_outline(
-            self.screen,
-            main_text,
-            (self.width // 2, self.height // 2 - 50),
-            self.fonts["large"],
-            color
-        )
-        
-        # Sub text
-        self.draw_text_outline(
-            self.screen,
-            sub_text,
-            (self.width // 2, self.height // 2),
-            self.fonts["medium"],
-            self.colors["text_light"]
-        )
-        
-        # Restart instruction
-        restart_text = "Press ENTER to restart or ESC to return to menu"
-        self.draw_text_outline(
-            self.screen,
-            restart_text,
-            (self.width // 2, self.height // 2 + 50),
-            self.fonts["medium"],
-            self.colors["text_light"]
-        )
-    
-    def _render_floating_numbers(self):
-        """Render floating damage/heal numbers."""
-        current_time = pygame.time.get_ticks()
-        
-        for float_num in self.float_numbers:
-            elapsed = current_time - float_num["start_time"]
-            progress = elapsed / float_num["duration"]
-            
-            # Fade out over time
-            alpha = int(255 * (1 - progress))
-            color = (*float_num["color"][:3], alpha)
-            
-            # Create surface with alpha
-            text_surface = self.fonts["large"].render(float_num["text"], True, float_num["color"])
-            text_surface.set_alpha(alpha)
-            
-            # Draw at current position
-            text_rect = text_surface.get_rect(center=float_num["pos"])
-            self.screen.blit(text_surface, text_rect)
-    
-    def _render_card_animation(self):
-        """Render animated card moving to center."""
-        if not self.card_animation:
-            return
-            
-        current_time = pygame.time.get_ticks()
-        elapsed = current_time - self.card_animation["start_time"]
-        progress = min(1.0, elapsed / self.card_animation["duration"])
-        
-        # Interpolate position (simple linear for now)
-        target_pos = self.card_animation["target_pos"]
-        
-        # Draw card at animated position
-        card_rect = pygame.Rect(0, 0, 120, 80)
-        card_rect.center = target_pos
-        
-        # Draw animated card
-        pygame.draw.rect(self.screen, (255, 215, 0), card_rect)
-        pygame.draw.rect(self.screen, (255, 255, 255), card_rect, 2)
-        
-        # Card name
-        card_name = self.card_animation["card"].name
-        name_surface = self.fonts["medium"].render(card_name, True, (0, 0, 0))
-        name_rect = name_surface.get_rect(center=card_rect.center)
-        self.screen.blit(name_surface, name_rect)
     
     def enter_screen(self) -> None:
         """Called when screen becomes active."""
@@ -1019,8 +625,8 @@ class MVPCombatScreen:
         # Get mouse position for hover detection
         mouse_pos = pygame.mouse.get_pos()
         
-        # Calculate card positions
-        card_width = 140  # Slightly larger cards
+        # Calculate card positions with proper scaling
+        card_width = 140  # Tamanho base da carta
         card_height = 90
         spacing = 12
         total_width = len(self.hand.cards) * card_width + (len(self.hand.cards) - 1) * spacing
@@ -1074,7 +680,7 @@ class MVPCombatScreen:
             
             # Draw card background
             if card_bg_texture:
-                # Scale texture to card size
+                # CORREÇÃO: Scale texture to card size para evitar frames gigantes
                 scaled_texture = pygame.transform.scale(card_bg_texture, (card_width, card_height))
                 surface.blit(scaled_texture, card_rect)
                 
@@ -1252,57 +858,6 @@ class MVPCombatScreen:
                 outline_width=1
             )
     
-    def _render_controls_to_surface(self, surface):
-        """Render controls help to a surface with medieval styling."""
-        controls = [
-            "← → Select Card",
-            "SPACE Play Card", 
-            "ENTER End Turn",
-            "R Restart Battle",
-            "ESC Return to Menu"
-        ]
-        
-        # Controls panel background
-        panel_width = 220
-        panel_height = len(controls) * 25 + 20
-        panel_rect = pygame.Rect(20, self.height - panel_height - 20, panel_width, panel_height)
-        
-        # Get control panel texture
-        panel_texture = get_asset("button_texture_stone")
-        if panel_texture:
-            panel_scaled = pygame.transform.scale(panel_texture, (panel_width, panel_height))
-            surface.blit(panel_scaled, panel_rect)
-        else:
-            # Fallback gradient
-            self._draw_gradient_rect(surface, panel_rect, (60, 45, 30), (40, 30, 20))
-        
-        # Panel border
-        pygame.draw.rect(surface, (120, 90, 60), panel_rect, 2)
-        
-        # Controls title
-        self.draw_text_outline_to_surface(
-            surface,
-            "⚔️ Controls",
-            (panel_rect.centerx, panel_rect.y + 15),
-            self.fonts["small"],
-            (255, 215, 0),  # Gold
-            outline_color=(0, 0, 0),
-            outline_width=1
-        )
-        
-        # Control texts
-        start_y = panel_rect.y + 35
-        for i, control in enumerate(controls):
-            self.draw_text_outline_to_surface(
-                surface,
-                control,
-                (panel_rect.x + 15, start_y + i * 20),
-                self.fonts["small"],
-                (220, 220, 220),  # Light gray
-                outline_color=(0, 0, 0),
-                outline_width=1
-            )
-    
     def _render_floating_numbers_to_surface(self, surface):
         """Render floating damage numbers to a surface with enhanced effects."""
         for float_num in self.float_numbers:
@@ -1344,9 +899,16 @@ class MVPCombatScreen:
             # Draw glow effect (multiple passes with decreasing alpha)
             glow_alpha = int(alpha * 0.6)
             for offset in range(8, 0, -2):
-                glow_text = font.render(text, True, (*glow_color, glow_alpha // (offset // 2)))
+                # Ensure alpha is valid (0-255)
+                current_alpha = max(0, min(255, glow_alpha // max(1, offset // 2)))
+                glow_color_rgba = (*glow_color, current_alpha)
+                
+                glow_text = font.render(text, True, glow_color)  # Use RGB only for render
                 if scale != 1.0:
                     glow_text = pygame.transform.scale(glow_text, (scaled_width, scaled_height))
+                
+                # Apply alpha after rendering
+                glow_text.set_alpha(current_alpha)
                 glow_rect = glow_text.get_rect(center=(text_surface.get_width() // 2, text_surface.get_height() // 2))
                 
                 # Draw glow in multiple positions
@@ -1410,32 +972,33 @@ class MVPCombatScreen:
         name_rect = name_surface.get_rect(center=card_rect.center)
         surface.blit(name_surface, name_rect)
     
-    def draw_text_outline_to_surface(self, surface, text, pos, font, color):
-        """Draw text with outline to a surface."""
-        x, y = pos
-        # Outline
-        outline_color = (0, 0, 0)
-        for dx in [-1, 0, 1]:
-            for dy in [-1, 0, 1]:
-                if dx != 0 or dy != 0:
-                    outline_surf = font.render(text, True, outline_color)
-                    surface.blit(outline_surf, (x + dx, y + dy))
-        # Main text
-        text_surf = font.render(text, True, color)
-        surface.blit(text_surf, pos)
-    
-    def draw_health_bar_to_surface(self, surface, rect, current, maximum):
-        """Draw health bar to a surface."""
-        # Background
-        pygame.draw.rect(surface, (100, 50, 50), rect)
-        pygame.draw.rect(surface, self.colors["border"], rect, 2)
+    def _render_game_over(self):
+        """Render game over screen."""
+        overlay = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 180))
+        self.screen.blit(overlay, (0, 0))
         
-        # Fill
-        if maximum > 0:
-            fill_width = int((current / maximum) * (rect.width - 4))
-            fill_rect = pygame.Rect(rect.x + 2, rect.y + 2, fill_width, rect.height - 4)
-            pygame.draw.rect(surface, self.colors["hp_red"], fill_rect)
+        result_text = "Victory!" if self.victory else "Defeat!"
+        result_color = (100, 255, 100) if self.victory else (255, 100, 100)
+        
+        self.draw_text_outline_to_surface(
+            self.screen,
+            result_text,
+            (self.width // 2, self.height // 2 - 50),
+            self.fonts["large"],
+            result_color
+        )
+        
+        restart_text = "Press R to restart or ESC to return to menu"
+        self.draw_text_outline_to_surface(
+            self.screen,
+            restart_text,
+            (self.width // 2, self.height // 2 + 20),
+            self.fonts["medium"],
+            self.colors["text_light"]
+        )
     
+    # Helper methods
     def _draw_gradient_rect(self, surface, rect, color1, color2):
         """Draw a vertical gradient rectangle."""
         for y in range(rect.height):

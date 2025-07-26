@@ -136,20 +136,38 @@ class CardView:
         
         return surface
     
-    def draw(self, screen: pygame.Surface, hover: bool = False):
-        """Desenha a carta na tela com efeito de hover."""
+    def draw(self, screen: pygame.Surface, pos=None, size=None, hover: bool = False):
+        """Desenha a carta na tela com efeito de hover.
+        
+        Args:
+            screen: Surface de destino
+            pos: Posição da carta (x,y). Se None, usa current_position
+            size: Tamanho da carta (w,h). Se None, usa tamanho padrão
+            hover: Se a carta está em hover
+        """
         if self._needs_redraw or self._card_surface is None:
             self._card_surface = self._create_card_surface()
             self._needs_redraw = False
         
-        # Calcular posição e escala
-        card_rect = self._card_surface.get_rect()
-        card_rect.centerx = self.current_position[0]
-        card_rect.bottom = self.current_position[1]
+        # Usar parâmetros ou valores padrão
+        draw_pos = pos if pos is not None else self.current_position
+        
+        if size is not None:
+            # Usar tamanho personalizado
+            w, h = size
+            frame = pygame.transform.smoothscale(self._card_surface, size)
+            card_rect = frame.get_rect()
+            card_rect.center = draw_pos
+        else:
+            # Calcular posição e escala padrão
+            card_rect = self._card_surface.get_rect()
+            card_rect.centerx = draw_pos[0]
+            card_rect.bottom = draw_pos[1]
+            frame = self._card_surface
         
         # Glow pulsante em hover
         if hover:
-            glow = pygame.Surface(self._card_surface.get_size(), pygame.SRCALPHA)
+            glow = pygame.Surface(frame.get_size(), pygame.SRCALPHA)
             alpha = int((math.sin(pygame.time.get_ticks() * 0.02) + 1) * 60)
             glow.fill((212, 180, 106, alpha))
             screen.blit(glow, card_rect.topleft, special_flags=pygame.BLEND_RGBA_ADD)
@@ -161,14 +179,14 @@ class CardView:
             glow_rect = glow_surface.get_rect(center=card_rect.center)
             screen.blit(glow_surface, glow_rect, special_flags=pygame.BLEND_RGBA_ADD)
         
-        # Escalar se necessário
-        if abs(self.scale - 1.0) > 0.01:
+        # Aplicar escala se não estamos usando tamanho personalizado
+        if size is None and abs(self.scale - 1.0) > 0.01:
             scaled_size = (int(card_rect.width * self.scale), int(card_rect.height * self.scale))
-            scaled_surface = pygame.transform.scale(self._card_surface, scaled_size)
+            scaled_surface = pygame.transform.scale(frame, scaled_size)
             scaled_rect = scaled_surface.get_rect(center=card_rect.center)
             screen.blit(scaled_surface, scaled_rect)
         else:
-            screen.blit(self._card_surface, card_rect)
+            screen.blit(frame, card_rect)
     
     def get_rect(self) -> pygame.Rect:
         """Retorna o retângulo da carta."""
