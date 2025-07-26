@@ -12,7 +12,7 @@ import re
 import json
 from pathlib import Path
 
-from ..models.card_models import CardType, Rarity
+from models.card_models import CardType, Rarity
 
 logger = logging.getLogger(__name__)
 

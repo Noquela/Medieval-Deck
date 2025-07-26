@@ -100,14 +100,19 @@ class MVPCombatScreen:
     Tela de combate MVP - Layout Definitivo Stage-Action.
     
     Layout:
-    - Background: Corredor medieval widescreen
-    - Sprites: Herói e inimigos na linha do chão (55% da altura)
+    - Background: Ambiente medieval frontal (catedral, sala do trono, etc)
+    - Sprites: Herói e inimigos na linha do chão visível
     - Cartas: Faixa inferior (18% da altura) com pergaminhos IA
     - HUD: Cantos discretos
     """
     
+    # === CONSTANTES DE LAYOUT VISUAL ===
+    FLOOR_Y_RATIO = 0.75  # Altura do chão como porcentagem da tela (75%)
+    CARD_AREA_HEIGHT_RATIO = 0.18  # Altura da área de cartas (18%)
+    
     def __init__(self, screen: pygame.Surface, config: Config, character_id: str = "knight"):
         """Initialize MVP combat screen with definitive layout."""
+        logger.info(f"🚀 INITIALIZING MVP COMBAT SCREEN - Character: {character_id}")
         self.screen = screen
         self.config = config
         self.character_id = character_id
@@ -115,6 +120,18 @@ class MVPCombatScreen:
         # Screen dimensions
         self.screen_w = screen.get_width()
         self.screen_h = screen.get_height()
+        
+        # === CONSTANTES DE POSICIONAMENTO ===
+        # Altura do chão onde os sprites ficam alinhados
+        self.FLOOR_Y = int(self.screen_h * self.FLOOR_Y_RATIO)
+        
+        # Área das cartas (parte inferior)
+        self.CARD_AREA_HEIGHT = int(self.screen_h * self.CARD_AREA_HEIGHT_RATIO)
+        self.CARD_AREA_Y = self.screen_h - self.CARD_AREA_HEIGHT
+        
+        # Posições dos personagens no combate
+        self.PLAYER_X = int(self.screen_w * 0.25)  # Lado esquerdo
+        self.ENEMY_X = int(self.screen_w * 0.75)   # Lado direito
         
         # Initialize Theme
         Theme.init_fonts()
@@ -220,17 +237,27 @@ class MVPCombatScreen:
             return [pygame.Surface((128, 128), pygame.SRCALPHA) for _ in range(frame_count)]
     
     def _setup_static_sprites(self):
-        """Setup static sprite fallbacks."""
-        # Load static sprites from generated assets
-        knight_sprite = get_asset("knight_sprite_enhanced") or get_asset("knight_sprite")
-        goblin_sprite = get_asset("goblin_sprite_enhanced") or get_asset("goblin_scout_sprite")
+        """Setup static sprite fallbacks with proper floor positioning."""
+        # Load static sprites from generated assets - use transparent versions when available
+        knight_sprite = (get_asset("knight_transparent") or 
+                        get_asset("knight_sprite_enhanced") or 
+                        get_asset("knight_sprite"))
         
-        if not knight_sprite:
-            knight_sprite = pygame.Surface((128, 128), pygame.SRCALPHA)
+        goblin_sprite = (get_asset("goblin_sprite_enhanced") or 
+                        get_asset("goblin_scout_sprite") or
+                        get_asset("skeleton_sprite_enhanced"))
+        
+        # Ensure sprites have transparency
+        if knight_sprite:
+            knight_sprite = knight_sprite.convert_alpha()
+        else:
+            knight_sprite = pygame.Surface((128, 192), pygame.SRCALPHA)
             knight_sprite.fill(Theme.get_color("gold"))
         
-        if not goblin_sprite:
-            goblin_sprite = pygame.Surface((96, 96), pygame.SRCALPHA)
+        if goblin_sprite:
+            goblin_sprite = goblin_sprite.convert_alpha()
+        else:
+            goblin_sprite = pygame.Surface((96, 144), pygame.SRCALPHA)
             goblin_sprite.fill(Theme.get_color("hp"))
         
         # Create single-frame animations
@@ -241,6 +268,9 @@ class MVPCombatScreen:
         
         self.player_anim = self.player_idle
         self.enemy_anim = self.goblin_idle
+        
+        # Setup sprite positioning rects for floor alignment
+        self._setup_sprite_positions()
     
     def _load_intent_icons(self) -> Dict[str, pygame.Surface]:
         """Load intent icons."""
@@ -267,6 +297,21 @@ class MVPCombatScreen:
             icons["block"] = icon
         
         return icons
+    
+    def _setup_sprite_positions(self):
+        """Setup sprite positioning rects aligned to floor."""
+        # Get current sprite dimensions
+        player_sprite = self.player_idle.get_current_frame()
+        enemy_sprite = self.goblin_idle.get_current_frame()
+        
+        # Create rects with bottom aligned to FLOOR_Y
+        self.player_rect = player_sprite.get_rect()
+        self.player_rect.midbottom = (self.PLAYER_X, self.FLOOR_Y)
+        
+        self.enemy_rect = enemy_sprite.get_rect()
+        self.enemy_rect.midbottom = (self.ENEMY_X, self.FLOOR_Y)
+        
+        logger.info(f"Sprites positioned - Player: {self.player_rect}, Enemy: {self.enemy_rect}, Floor Y: {self.FLOOR_Y}")
     
     def _create_simple_fallback_background(self) -> pygame.Surface:
         """Create simple gradient fallback background for old method."""
@@ -439,32 +484,56 @@ class MVPCombatScreen:
             return None
     
     def _create_fallback_background(self) -> pygame.Surface:
-        """Create fallback background with medieval theme."""
+        """Create fallback background with BRIGHT RED for testing."""
         bg = pygame.Surface((self.screen_w, self.screen_h))
         
-        # Create a dark medieval gradient background instead of plain color
-        # Dark stone blue to dark brown gradient
-        for y in range(self.screen_h):
-            progress = y / self.screen_h
-            # Interpolate between dark blue-gray (30, 35, 50) and dark brown (40, 25, 15)
-            r = int(30 + (40 - 30) * progress)
-            g = int(35 + (25 - 35) * progress) 
-            b = int(50 + (15 - 50) * progress)
-            color = (r, g, b)
-            pygame.draw.line(bg, color, (0, y), (self.screen_w, y))
+        # BRIGHT RED BACKGROUND - IMPOSSIBLE TO MISS!
+        bg.fill((255, 0, 0))  # Bright red for testing
+        
+        # Add some text to confirm this is working
+        font = pygame.font.Font(None, 48)
+        text = font.render("FALLBACK BACKGROUND - RED TEST", True, (255, 255, 255))
+        text_rect = text.get_rect(center=(self.screen_w // 2, self.screen_h // 2))
+        bg.blit(text, text_rect)
             
         return bg
     
     def _load_biome_backgrounds(self):
-        """Load backgrounds for each biome."""
-        # Try to load the corridor background we generated
-        corridor_bg = self._load_background("corridor_stage_definitive")
-        if not corridor_bg:
-            corridor_bg = self._create_fallback_background()
+        """Load medieval environment backgrounds for immersive combat."""
+        logger.info("🔄 LOADING BIOME BACKGROUNDS - Medieval environments...")
         
-        # Use same background for all biomes for now
+        # Priority list of medieval environment backgrounds (frontal perspective)
+        medieval_environments = [
+            "bg_cathedral_9ced699823efe904814979cef550eefe",  # Catedral - ambiente frontal ideal
+            "knight_bg_throne_room",                          # Sala do trono
+            "combat_bg_dark_tower",                          # Torre escura
+            "combat_bg_dragon_lair",                         # Covil do dragão
+            "combat_bg_skeleton_crypt",                      # Cripta
+            "knight_bg",                                     # Background do cavaleiro
+            "wizard_bg_sanctum",                             # Santuário do mago
+            "assassin_bg_lair"                               # Covil do assassino
+        ]
+        
+        # Try to load the best medieval environment background
+        environment_bg = None
+        for bg_name in medieval_environments:
+            environment_bg = self._load_background(bg_name)
+            if environment_bg:
+                logger.info(f"Using medieval environment: {bg_name}")
+                break
+        
+        # Fallback to corridor if no environment found
+        if not environment_bg:
+            environment_bg = self._load_background("corridor_stage_definitive")
+            
+        # Final fallback to generated gradient
+        if not environment_bg:
+            logger.info("🔴 USING BRIGHT RED FALLBACK BACKGROUND!")
+            environment_bg = self._create_fallback_background()
+        
+        # Use same background for all biomes
         for biome_name in self.biomes:
-            self.biomes[biome_name]["background"] = corridor_bg
+            self.biomes[biome_name]["background"] = environment_bg
     
     def _start_combat(self) -> None:
         """Start a new combat."""
@@ -689,27 +758,60 @@ class MVPCombatScreen:
             self._draw_game_over()
     
     def _draw_background(self):
-        """Draw corridor background to background layer."""
-        if self.bg_corridor:
-            self.layer_bg.blit(self.bg_corridor, (0, 0))
+        """Draw medieval environment background to background layer."""
+        current_biome_data = self.biomes.get(self.current_biome, {})
+        bg = current_biome_data.get("background")
+        
+        if bg:
+            # Draw the medieval environment (cathedral, throne room, etc)
+            self.layer_bg.blit(bg, (0, 0))
         else:
+            # Fallback to dark medieval gradient
             self.layer_bg.fill(Theme.get_color("bg_combat"))
+            
+            # Add subtle medieval atmosphere if no background
+            for y in range(0, self.screen_h, 4):
+                alpha = int(20 * (1 - y / self.screen_h))
+                if alpha > 0:
+                    overlay = pygame.Surface((self.screen_w, 4), pygame.SRCALPHA)
+                    overlay.fill((40, 30, 20, alpha))
+                    self.layer_bg.blit(overlay, (0, y))
+        
+        # === DEBUG: LINHA VISUAL DO CHÃO ===
+        # Linha amarela para mostrar onde está o FLOOR_Y
+        pygame.draw.line(self.layer_bg, (255, 255, 0), (0, self.FLOOR_Y), (self.screen_w, self.FLOOR_Y), 3)
+        
+        # Texto debug
+        if hasattr(pygame.font, 'Font'):
+            debug_font = pygame.font.Font(None, 36)
+            debug_text = debug_font.render(f"FLOOR Y: {self.FLOOR_Y} (75%)", True, (255, 255, 0))
+            self.layer_bg.blit(debug_text, (50, self.FLOOR_Y - 40))
     
     def _draw_player_sprite(self):
-        """Draw player sprite aligned to ground line."""
+        """Draw player sprite aligned to floor line with proper integration."""
         if hasattr(self, 'player_anim') and self.player_anim:
             frame = self.player_anim.current()
-            # Position sprite on ground line, centered horizontally
-            sprite_rect = frame.get_rect(midbottom=(self.screen_w // 2 - 200, self.ground_y))
-            self.layer_mid.blit(frame, sprite_rect)
+            
+            # Use predefined position with FLOOR_Y alignment
+            if hasattr(self, 'player_rect'):
+                self.layer_mid.blit(frame, self.player_rect)
+            else:
+                # Fallback positioning
+                sprite_rect = frame.get_rect(midbottom=(self.PLAYER_X, self.FLOOR_Y))
+                self.layer_mid.blit(frame, sprite_rect)
     
     def _draw_enemy_sprites(self):
-        """Draw enemy sprites aligned to ground line."""
+        """Draw enemy sprites aligned to floor line with proper integration."""
         if hasattr(self, 'enemy_anim') and self.enemy_anim:
             frame = self.enemy_anim.current()
-            # Position enemy on ground line, offset to the right
-            sprite_rect = frame.get_rect(midbottom=(self.screen_w // 2 + 200, self.ground_y))
-            self.layer_mid.blit(frame, sprite_rect)
+            
+            # Use predefined position with FLOOR_Y alignment
+            if hasattr(self, 'enemy_rect'):
+                self.layer_mid.blit(frame, self.enemy_rect)
+            else:
+                # Fallback positioning
+                sprite_rect = frame.get_rect(midbottom=(self.ENEMY_X, self.FLOOR_Y))
+                self.layer_mid.blit(frame, sprite_rect)
         
         # Draw enemy info above sprite
         self._draw_enemy_info()

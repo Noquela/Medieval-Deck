@@ -34,7 +34,8 @@ class CardView:
         # Tentar carregar frame da carta
         try:
             self.frame_image = pygame.image.load("assets/ui/card_frame.png").convert_alpha()
-            self.frame_image = pygame.transform.scale(self.frame_image, Theme.CARD_SIZE)
+            # CORREÇÃO CRÍTICA: NÃO escalar automaticamente no carregamento
+            # Deixar que o draw() faça a escala quando necessário
         except:
             # Criar frame placeholder
             self.frame_image = pygame.Surface(Theme.CARD_SIZE, pygame.SRCALPHA)
@@ -67,8 +68,10 @@ class CardView:
         """Cria a surface da carta."""
         surface = pygame.Surface(Theme.CARD_SIZE, pygame.SRCALPHA)
         
-        # Frame de fundo
-        surface.blit(self.frame_image, (0, 0))
+        # Frame de fundo - escalar para Theme.CARD_SIZE
+        if self.frame_image:
+            scaled_frame = pygame.transform.smoothscale(self.frame_image, Theme.CARD_SIZE)
+            surface.blit(scaled_frame, (0, 0))
         
         # Cor baseada no tipo de carta
         card_color = Theme.get_color(self.card.get_color())
@@ -153,11 +156,14 @@ class CardView:
         draw_pos = pos if pos is not None else self.current_position
         
         if size is not None:
-            # Usar tamanho personalizado
+            # CORREÇÃO CRÍTICA: Usar tamanho personalizado com escala correta
             w, h = size
             frame = pygame.transform.smoothscale(self._card_surface, size)
             card_rect = frame.get_rect()
-            card_rect.center = draw_pos
+            if isinstance(draw_pos, (list, tuple)) and len(draw_pos) == 2:
+                card_rect.center = draw_pos
+            else:
+                card_rect.topleft = draw_pos
         else:
             # Calcular posição e escala padrão
             card_rect = self._card_surface.get_rect()
