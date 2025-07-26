@@ -199,6 +199,12 @@ Examples:
         help="Skip character selection and go directly to MVP Combat"
     )
     
+    parser.add_argument(
+        "--gen-assets-full",
+        action="store_true",
+        help="Generate all assets with custom corridor background and sprite sheets"
+    )
+    
     return parser
 
 
@@ -735,6 +741,22 @@ def main():
                 return 0 if result else 1
             except ImportError as e:
                 logging.error(f"Failed to import MVP Combat demo: {e}")
+                return 1
+        
+        # Se for gerar assets completos com corredor e sprite sheets
+        if args.gen_assets_full:
+            logging.info("Running full asset generation...")
+            try:
+                import subprocess
+                result = subprocess.run([sys.executable, "scripts/gen_assets_simple.py"], 
+                                      capture_output=True, text=True)
+                print(result.stdout)
+                if result.stderr:
+                    print("Errors:", result.stderr)
+                logging.info("Full asset generation completed.")
+                return result.returncode
+            except Exception as e:
+                logging.error(f"Failed to run full asset generation: {e}")
                 return 1
             
         # Initialize game engine

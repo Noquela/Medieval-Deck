@@ -1,47 +1,168 @@
 """
 Medieval Deck - Theme Configuration
 
-Centraliza cores, fontes e constantes visuais para o MVP.
+Centraliza cores, fontes e constantes visuais para o MVP com assets IA.
 """
 
 import pygame
-from pathlib import Path
-from typing import Dict, Tuple
+import math
+from pathlib import Path    @classmethod
+    def draw_text_outline(cls, surface: pygame.Surface, text: str, font: pygame.font.Font, 
+                         pos: Tuple[int, int], color: Tuple[int, int, int], 
+                         outline_color: Tuple[int, int, int] = (0, 0, 0), outline_width: int = 1):
+        """Desenha texto com contorno."""
+        x, y = pos
+        
+        # Contorno
+        for dx in range(-outline_width, outline_width + 1):
+            for dy in range(-outline_width, outline_width + 1):
+                if dx != 0 or dy != 0:
+                    outline_surf = font.render(text, True, outline_color)
+                    surface.blit(outline_surf, (x + dx, y + dy))
+        
+        # Texto principal
+        text_surf = font.render(text, True, color)
+        surface.blit(text_surf, pos)
+    
+    @classmethod
+    def get_color_with_alpha(cls, color_name: str, alpha: int) -> Tuple[int, int, int, int]:
+        """
+        Retorna uma cor do tema com alpha específico.
+        
+        Args:
+            color_name: Nome da cor no tema
+            alpha: Valor alpha (0-255)
+            
+        Returns:
+            Tupla RGBA
+        """
+        color = cls.COLORS.get(color_name, cls.COLORS["text_light"])
+        return (*color, alpha)
+    
+    @classmethod
+    def calculate_glow_alpha(cls, time_ms: int) -> int:
+        """
+        Calcula o alpha do glow pulsante baseado no tempo.
+        
+        Args:
+            time_ms: Tempo atual em millisegundos
+            
+        Returns:
+            Valor alpha para o glow
+        """
+        progress = (time_ms % cls.TIMINGS["hover_glow_period"]) / cls.TIMINGS["hover_glow_period"]
+        sine_wave = math.sin(progress * 2 * math.pi)
+        alpha_range = cls.GLOW["alpha_max"] - cls.GLOW["alpha_min"]
+        return cls.GLOW["alpha_min"] + int((sine_wave + 1) * 0.5 * alpha_range)
+    
+    @classmethod
+    def load_sprite_sheet(cls, path: str, frame_count: int) -> list:
+        """
+        Carrega uma sprite sheet e divide em frames.
+        
+        Args:
+            path: Caminho para a sprite sheet
+            frame_count: Número de frames na sheet
+            
+        Returns:
+            Lista de surfaces dos frames
+        """
+        try:
+            sheet = pygame.image.load(path).convert_alpha()
+            frame_width = sheet.get_width() // frame_count
+            frame_height = sheet.get_height()
+            
+            frames = []
+            for i in range(frame_count):
+                frame_rect = pygame.Rect(i * frame_width, 0, frame_width, frame_height)
+                frame = sheet.subsurface(frame_rect).copy()
+                frames.append(frame)
+            
+            return frames
+        except Exception as e:
+            print(f"Error loading sprite sheet {path}: {e}")
+            # Return empty frames
+            return [pygame.Surface((64, 64), pygame.SRCALPHA) for _ in range(frame_count)]rt Dict, Tuple
 
 class Theme:
     """Configuração visual centralizada do Medieval Deck."""
     
-    # === CORES ===
+    # === CORES EXPANDIDAS ===
     COLORS = {
         # Principais
-        "gold": (212, 180, 106),
-        "gold_dark": (180, 150, 80),
+        "gold": (212, 180, 106),          # Dourado medieval
+        "dark_gold": (160, 140, 80),      # Dourado escuro
+        "light_gold": (240, 220, 160),    # Dourado claro
+        "gold_dark": (180, 150, 80),      # Compatibilidade
         "silver": (192, 192, 192),
         
-        # Status
-        "hp": (220, 68, 58),
-        "hp_dark": (180, 40, 30),
-        "mana": (39, 131, 221),
-        "mana_dark": (20, 80, 160),
-        "block": (150, 150, 150),
+        # Health and mana
+        "hp": (224, 68, 58),              # Vermelho HP
+        "hp_red": (224, 68, 58),          # Alias
+        "hp_dark": (180, 40, 30),         # HP escuro
+        "mana": (39, 131, 221),           # Azul mana
+        "mana_blue": (39, 131, 221),      # Alias
+        "mana_dark": (25, 80, 140),       # Mana escuro
+        "block": (100, 150, 255),         # Azul do bloqueio
+        "block_blue": (100, 150, 255),    # Alias
         
-        # UI
-        "ui_mask": (18, 11, 5, 140),
-        "text_light": (245, 240, 230),
-        "text_dark": (40, 30, 20),
-        "background": (25, 20, 15),
+        # UI elements
+        "ui_mask": (18, 11, 5, 140),      # Máscara semi-transparente
+        "background": (25, 20, 15),       # Fundo escuro
+        "border": (100, 80, 60),          # Bordas
+        "text_light": (245, 240, 230),    # Texto claro
+        "text_dark": (40, 30, 20),        # Texto escuro
         
-        # Cards
+        # Card states
+        "card_bg": (60, 50, 40),          # Fundo carta normal
+        "card_selected": (120, 100, 70),  # Carta selecionada
+        "card_hover": (100, 85, 60),      # Carta em hover
+        "selected": (120, 100, 70),       # Alias para compatibilidade
+        
+        # Card types
         "card_attack": (220, 68, 58),
         "card_defense": (150, 150, 150),
         "card_magic": (39, 131, 221),
         "card_heal": (68, 220, 68),
         
-        # Effects
+        # Effects and particles
         "glow_gold": (255, 215, 0, 128),
         "particles_hit": (255, 100, 100),
         "particles_heal": (100, 255, 100),
         "particles_magic": (100, 100, 255),
+        "particle_gold": (255, 215, 0),   # Partículas douradas
+        "particle_red": (255, 100, 100),  # Partículas de dano
+        "particle_blue": (100, 150, 255), # Partículas de bloqueio
+        "heal_green": (100, 255, 100),    # Verde da cura
+        "damage_red": (255, 100, 100),    # Vermelho do dano
+    }
+    
+    # === LAYOUT CONSTANTS ===
+    LAYOUT = {
+        "card_aspect": 0.67,              # Proporção altura/largura das cartas
+        "hand_bottom_margin": 0.15,       # Margem inferior da mão (% da tela)
+        "enemy_ground_line": 0.55,        # Linha do chão para inimigos (% da tela)
+        "player_ground_line": 0.55,       # Linha do chão para jogador (% da tela)
+        "card_hover_lift": 12,            # Pixels que a carta levanta no hover
+        "card_hover_scale": 1.05,         # Escala da carta no hover
+        "torch_flicker_speed": 6,         # FPS da animação da tocha
+    }
+    
+    # === ANIMATION TIMINGS ===
+    TIMINGS = {
+        "card_play_duration": 300,        # Duração da animação de jogar carta
+        "attack_duration": 500,           # Duração da animação de ataque
+        "floating_number_duration": 1200, # Duração dos números flutuantes
+        "particle_duration": 800,         # Duração dos efeitos de partícula
+        "camera_shake_frames": 4,         # Frames de camera shake
+        "hover_glow_period": 2000,        # Período do glow pulsante (ms)
+    }
+    
+    # === GLOW EFFECT SETTINGS ===
+    GLOW = {
+        "alpha_min": 40,                  # Alpha mínimo do glow
+        "alpha_max": 120,                 # Alpha máximo do glow
+        "size_offset": 10,                # Pixels extras para o glow
     }
     
     # === FONTES ===

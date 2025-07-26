@@ -171,7 +171,7 @@ class Theme:
         self.spacing = Spacing()
         
         # Configurações de performance
-        self.enable_particles = True
+        self.enable_particles = False  # Temporarily disabled to fix color issues
         self.enable_glow_effects = True
         self.enable_shadows = True
         self.animation_quality = "high"  # "low", "medium", "high"

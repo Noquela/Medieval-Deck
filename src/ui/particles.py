@@ -275,22 +275,37 @@ class Particle:
         if not self.is_alive or self.alpha <= 0:
             return
         
-        # Cor com alpha atual
-        if len(self.color) == 3:
-            draw_color = (*self.color, self.alpha)
-        else:
-            draw_color = (*self.color[:3], min(self.alpha, self.color[3]))
+        # Cor com alpha atual - validação robusta
+        try:
+            if len(self.color) == 3:
+                # Garantir que os valores sejam inteiros válidos
+                color_rgb = tuple(max(0, min(255, int(c))) for c in self.color)
+                draw_color = (*color_rgb, max(0, min(255, int(self.alpha))))
+            else:
+                color_rgb = tuple(max(0, min(255, int(c))) for c in self.color[:3])
+                alpha = min(max(0, min(255, int(self.alpha))), 
+                           max(0, min(255, int(self.color[3]))))
+                draw_color = (*color_rgb, alpha)
+        except (TypeError, ValueError, IndexError):
+            # Fallback para cor amarela se houver problema
+            draw_color = (255, 255, 0, max(0, min(255, int(self.alpha))))
         
         # Cria superfície temporária para transparência
         temp_surface = pygame.Surface((int(self.size * 2), int(self.size * 2)), pygame.SRCALPHA)
         
-        if self.type == ParticleType.MIST:
-            # Névoa como círculo suave
-            pygame.draw.circle(temp_surface, draw_color, 
-                             (int(self.size), int(self.size)), int(self.size))
-        else:
-            # Outras partículas como pontos/círculos pequenos
-            pygame.draw.circle(temp_surface, draw_color,
+        try:
+            if self.type == ParticleType.MIST:
+                # Névoa como círculo suave
+                pygame.draw.circle(temp_surface, draw_color, 
+                                 (int(self.size), int(self.size)), int(self.size))
+            else:
+                # Outras partículas como pontos/círculos pequenos
+                pygame.draw.circle(temp_surface, draw_color,
+                                 (int(self.size), int(self.size)), max(1, int(self.size)))
+        except (TypeError, ValueError) as e:
+            # Fallback drawing if color is still invalid
+            fallback_color = (255, 255, 0, 128)  # Yellow semi-transparent
+            pygame.draw.circle(temp_surface, fallback_color,
                              (int(self.size), int(self.size)), max(1, int(self.size)))
         
         # Desenha na superfície principal
@@ -562,7 +577,8 @@ class ParticleManager:
     def draw(self, surface: pygame.Surface):
         """Desenha todas as partículas."""
         for emitter in self.emitters:
-            emitter.draw(surface)
+            # emitter.draw(surface)  # Temporarily disabled
+            pass
     
     def clear_all(self):
         """Remove todos os emissores e partículas."""

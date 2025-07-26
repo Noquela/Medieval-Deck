@@ -534,7 +534,7 @@ class GameplayScreen:
             self._draw_settings()
             
         # Desenhar partículas
-        self.particle_system.draw(self.screen)
+        # self.particle_system.draw(self.screen)  # Temporarily disabled
         
     def _draw_main_menu(self):
         """Desenha o menu principal."""

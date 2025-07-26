@@ -24,7 +24,7 @@ from ..ui.particles import ParticleSystem, ParticleEmitter, ParticleType
 from ..ui.helpers import fit_height, fit_width, create_gradient_surface, draw_outlined_text, apply_glow_effect
 from ..components.button import Button
 from ..generators.asset_generator import AssetGenerator
-from ..utils.asset_loader import load_ia_assets
+from ..utils.asset_loader import AssetLoader
 from ..gameplay.animation import animation_manager
 from ..utils.sprite_loader import load_character_animations, scale_animation_frames
 
@@ -205,6 +205,38 @@ class CombatScreen:
         # Inicialização dos componentes
         self._load_ia_assets()
         self._load_sprite_animations()
+        
+    def get_asset(self, asset_name: str, category: str = None) -> pygame.Surface:
+        """
+        Busca um asset na estrutura hierárquica.
+        
+        Args:
+            asset_name: Nome do asset ou variante
+            category: Categoria específica (opcional)
+            
+        Returns:
+            pygame.Surface do asset encontrado ou None
+        """
+        # Primeiro, tentar buscar na estrutura hierárquica
+        if category and category in self.assets:
+            if asset_name in self.assets[category]:
+                return self.assets[category][asset_name]
+        
+        # Buscar em todas as categorias
+        for cat_name, assets in self.assets.items():
+            if isinstance(assets, dict):
+                if asset_name in assets:
+                    return assets[asset_name]
+                # Tentar buscar por nome parcial
+                for variant_name, asset in assets.items():
+                    if asset_name in variant_name or variant_name in asset_name:
+                        return asset
+        
+        # Fallback: buscar diretamente (compatibilidade com estrutura antiga)
+        if asset_name in self.assets:
+            return self.assets[asset_name]
+            
+        return None
         self._setup_zones()
         self._init_demo_hand()  # Mover para depois de _setup_zones
         self._setup_buttons()
@@ -249,13 +281,23 @@ class CombatScreen:
     def _load_ia_assets(self):
         """Carrega todos os assets gerados por IA usando o AssetLoader."""
         try:
-            # Usar a função automática do AssetLoader
-            self.assets.update(load_ia_assets("assets/ia"))
+            # Usar o novo AssetLoader para carregar assets gerados
+            asset_loader = AssetLoader()
+            generated_assets = asset_loader.load_all_assets()
+            self.assets.update(generated_assets)
             
             # Escalar background para o tamanho da tela
-            if "combat_bg" in self.assets:
+            if "background" in generated_assets.get("background", {}):
                 self.background = pygame.transform.smoothscale(
-                    self.assets["combat_bg"], 
+                    generated_assets["background"]["main"], 
+                    self.screen.get_size()
+                )
+            elif "background" in generated_assets.get("background", {}):
+                # Fallback para o primeiro background disponível
+                bg_variants = generated_assets["background"]
+                first_bg = next(iter(bg_variants.values()))
+                self.background = pygame.transform.smoothscale(
+                    first_bg, 
                     self.screen.get_size()
                 )
             else:
@@ -267,43 +309,33 @@ class CombatScreen:
                     255
                 )
             
-            # Assets principais que precisamos
-            required_assets = [
-                "combat_bg",  # Background de combate épico
-                "player_sprite",  # Sprite do jogador
-                "goblin_scout_sprite", "orc_berserker_sprite",  # Sprites de inimigos
-                "skeleton_archer_sprite", "dark_mage_sprite",
-                "button_idle", "button_hover", "button_pressed",
-                "icon_arrow_left", "icon_arrow_right"
-            ]
+            # Verificar assets carregados na nova estrutura
+            asset_categories = generated_assets.keys()
+            total_assets = sum(len(category) for category in generated_assets.values())
             
-            # Verificar assets carregados
-            loaded_count = 0
-            for asset_name in required_assets:
-                if asset_name in self.assets:
-                    loaded_count += 1
-                    logger.debug(f"✅ Asset carregado: {asset_name}")
-                else:
-                    logger.warning(f"❌ Asset faltando: {asset_name}")
-            
-            logger.info(f"Assets IA carregados: {loaded_count}/{len(required_assets)} ({len(self.assets)} total)")
+            logger.info(f"Assets IA carregados: {total_assets} assets em {len(asset_categories)} categorias")
+            for category, assets in generated_assets.items():
+                logger.debug(f"📁 {category}: {len(assets)} assets ({list(assets.keys())})")
             
             # Configurar background de combate
-            if "combat_bg" in self.assets:
-                self.background_surface = self.assets["combat_bg"]
+            # Verificar se temos combat_bg na estrutura hierárquica
+            combat_bg = self.get_asset("combat_bg", "background")
+            if combat_bg:
+                self.background_surface = combat_bg
                 logger.info("✅ Background de combate configurado")
             
-            # Configurar sprites de inimigos
+            # Configurar sprites de inimigos da categoria 'sprite'
             self.enemy_sprites = {}
-            for asset_name in self.assets:
-                if asset_name.endswith('_sprite') and asset_name != 'player_sprite':
-                    enemy_id = asset_name.replace('_sprite', '')
-                    self.enemy_sprites[enemy_id] = self.assets[asset_name]
-                    logger.debug(f"✅ Enemy sprite: {enemy_id}")
+            if 'sprite' in generated_assets:
+                for sprite_name, sprite_surface in generated_assets['sprite'].items():
+                    if sprite_name != 'player':  # Excluir sprite do jogador
+                        self.enemy_sprites[sprite_name] = sprite_surface
+                        logger.debug(f"✅ Enemy sprite: {sprite_name}")
             
             # Configurar sprite do jogador
-            if "player_sprite" in self.assets:
-                self.player_sprite = self.assets["player_sprite"]
+            player_sprite = self.get_asset("knight", "sprite") or self.get_asset("player", "sprite")
+            if player_sprite:
+                self.player_sprite = player_sprite
                 logger.info("✅ Player sprite configurado")
             
         except Exception as e:
@@ -586,9 +618,10 @@ class CombatScreen:
             logger.warning(f"⚠️ Erro ao carregar sprite melhorado: {e}")
         
         # Fallback: usar sprite original se disponível
-        if "player_sprite" in self.assets:
+        player_sprite = self.get_asset("knight", "sprite") or self.get_asset("player", "sprite")
+        if player_sprite:
             target_height = int(self.height * 0.35)
-            self.player_sprite = fit_height(self.assets["player_sprite"], target_height)
+            self.player_sprite = fit_height(player_sprite, target_height)
             logger.info("Sprite original carregado como fallback")
         else:
             logger.warning("❌ Nenhum sprite do jogador encontrado")
@@ -610,14 +643,13 @@ class CombatScreen:
         )
         
         # Aplicar texturas IA nos botões se disponíveis
-        if "button_texture_mystical" in self.assets:
-            button_texture = pygame.transform.scale(
-                self.assets["button_texture_mystical"], (button_width, button_height)
-            )
+        button_texture = self.get_asset("mystical", "button")
+        if button_texture:
+            scaled_texture = pygame.transform.scale(button_texture, (button_width, button_height))
             self.end_turn_button.textures = {
-                "normal": button_texture,
-                "hover": apply_glow_effect(button_texture, (138, 43, 226), 3),  # Roxo
-                "pressed": button_texture
+                "normal": scaled_texture,
+                "hover": apply_glow_effect(scaled_texture, (138, 43, 226), 3),  # Roxo
+                "pressed": scaled_texture
             }
         
         logger.info("Botões configurados com texturas IA")
@@ -2573,7 +2605,7 @@ class CombatScreen:
             
     def _draw_particles(self):
         """Desenha o sistema de partículas."""
-        self.particle_system.draw(self.screen)
+        # self.particle_system.draw(self.screen)  # Temporarily disabled
         
     def _draw_overlays(self):
         """Desenha overlays e transições especiais."""

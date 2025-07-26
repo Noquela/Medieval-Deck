@@ -37,7 +37,7 @@ class AssetLoader:
     - UI: frame_ornate.png, scroll_texture.png, etc.
     """
     
-    def __init__(self, assets_dir: str = "assets/ia"):
+    def __init__(self, assets_dir: str = "assets/generated"):
         self.assets_dir = Path(assets_dir)
         self.assets: Dict[str, AssetInfo] = {}
         self.categories: Dict[str, List[AssetInfo]] = {}
@@ -122,19 +122,35 @@ class AssetLoader:
         Returns:
             Tupla (categoria, variante)
         """
-        # Mapear padrões de nomes para categorias
-        if name.endswith('_bg'):
-            return 'background', name.replace('_bg', '')
+        # Mapear padrões de nomes para categorias das novas imagens geradas
+        if name.endswith('_bg') or name == 'background':
+            return 'background', name.replace('_bg', '') if name != 'background' else 'main'
         elif name.endswith('_sprite'):
             return 'sprite', name.replace('_sprite', '')
-        elif name.startswith('button_'):
-            return 'button', name.replace('button_', '')
-        elif name.startswith('icon_'):
-            return 'icon', name.replace('icon_', '')
-        elif 'menu' in name and 'bg' in name:
+        elif name.startswith('button_texture_'):
+            return 'button', name.replace('button_texture_', '')
+        elif name.startswith('arrow_'):
+            return 'icon', name.replace('arrow_', '')
+        elif 'menu' in name and ('background' in name or 'bg' in name):
             return 'background', 'menu'
-        elif 'cinematic' in name:
-            return 'cinematic', name.replace('_cinematic', '')
+        elif 'combat_bg' in name:
+            return 'background', name.replace('combat_bg_', '')
+        elif name.startswith('knight_') and ('01' in name or name.endswith('_sprite')):
+            return 'character', 'knight'
+        elif name.startswith('wizard_') and ('01' in name or name.endswith('_sprite')):
+            return 'character', 'wizard'
+        elif name.startswith('assassin_') and ('01' in name or name.endswith('_sprite')):
+            return 'character', 'assassin'
+        elif name.startswith('dragon_') and '01' in name:
+            return 'card', 'dragon'
+        elif name.startswith('castle_') and '01' in name:
+            return 'card', 'castle'
+        elif name.startswith('forest_') and '01' in name:
+            return 'card', 'forest'
+        elif name.startswith('fireball_') and '01' in name:
+            return 'card', 'fireball'
+        elif name.startswith('excalibur_') and '01' in name:
+            return 'card', 'excalibur'
         elif 'frame' in name:
             return 'ui', 'frame'
         elif 'scroll' in name:

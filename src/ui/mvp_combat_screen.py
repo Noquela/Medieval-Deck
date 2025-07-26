@@ -13,6 +13,7 @@ from pathlib import Path
 from collections import deque
 
 from ..utils.config import Config
+from ..utils.asset_loader import get_asset
 from ..gameplay.mvp_cards import Card, CardType, Hand
 from ..gameplay.mvp_deck import MVPDeck
 from ..core.mvp_turn_engine import MVPTurnEngine, MVPPlayer, MVPEnemy
@@ -20,64 +21,7 @@ from ..core.mvp_turn_engine import MVPTurnEngine, MVPPlayer, MVPEnemy
 logger = logging.getLogger(__name__)
 
 
-class ParticleEmitter:
-    """Simple particle emitter for combat effects."""
-    
-    def __init__(self, pos, particle_count=20, color=(255, 255, 100), duration=1000):
-        self.pos = pos
-        self.particles = []
-        self.duration = duration
-        self.start_time = pygame.time.get_ticks()
-        self.alive = True
-        
-        # Create particles
-        for _ in range(particle_count):
-            particle = {
-                "pos": [pos[0] + random.randint(-10, 10), pos[1] + random.randint(-10, 10)],
-                "vel": [random.uniform(-2, 2), random.uniform(-3, -1)],
-                "color": color,
-                "life": random.uniform(0.5, 1.0),
-                "initial_life": random.uniform(0.5, 1.0)
-            }
-            self.particles.append(particle)
-    
-    def update(self, dt):
-        """Update particle positions and life."""
-        current_time = pygame.time.get_ticks()
-        if current_time - self.start_time > self.duration:
-            self.alive = False
-            return
-        
-        for particle in self.particles[:]:
-            particle["pos"][0] += particle["vel"][0] * dt * 60
-            particle["pos"][1] += particle["vel"][1] * dt * 60
-            particle["life"] -= dt
-            
-            if particle["life"] <= 0:
-                self.particles.remove(particle)
-        
-        if not self.particles:
-            self.alive = False
-    
-    def draw(self, screen):
-        """Draw particles."""
-        for particle in self.particles:
-            try:
-                alpha = int(255 * (particle["life"] / particle["initial_life"]))
-                color = particle["color"]  # Should be RGB tuple (r, g, b)
-                
-                # Ensure color is valid RGB tuple
-                if len(color) != 3:
-                    color = (255, 255, 0)  # Fallback to yellow
-                
-                # Create a surface for alpha blending
-                particle_surf = pygame.Surface((6, 6), pygame.SRCALPHA)
-                particle_surf.fill(color)
-                particle_surf.set_alpha(alpha)  # Set alpha separately
-                screen.blit(particle_surf, particle["pos"])
-            except Exception as e:
-                print(f"Particle draw error: {e}, color: {particle['color']}")
-                continue
+# ParticleEmitter class removed to fix color argument issues
 
 
 class Camera:
@@ -204,7 +148,7 @@ class MVPCombatScreen:
         self.card_animation = None
         self.card_anim_timer = 0
         self.float_numbers = []  # For damage numbers
-        self.emitters = []  # For particle effects
+        self.emitters = []  # For particle effects - cleared to fix color issues
         self.player_anim_state = "idle"  # Track player animation state
         self.player_anim_timer = 0
         
@@ -441,8 +385,8 @@ class MVPCombatScreen:
                     })
                     
                     # Create particle effect on enemy
-                    emitter = ParticleEmitter(enemy_pos, particle_count=10, color=(255, 100, 100), duration=600)
-                    self.emitters.append(emitter)
+                    # emitter = ParticleEmitter(enemy_pos, particle_count=10, color=(255, 100, 100), duration=600)
+                    # self.emitters.append(emitter)  # Temporarily disabled
                 
                 # Create healing number
                 if card.heal > 0:
@@ -500,6 +444,9 @@ class MVPCombatScreen:
     
     def update(self, dt: float) -> None:
         """Update combat screen with all enhancements."""
+        # Clear emitters to prevent particle color errors
+        self.emitters.clear()
+        
         current_time = pygame.time.get_ticks()
         
         # Update camera shake
@@ -511,8 +458,8 @@ class MVPCombatScreen:
             if elapsed >= self.card_animation["duration"]:
                 # Create particle effect when card animation ends
                 pos = self.card_animation["target_pos"]
-                emitter = ParticleEmitter(pos, particle_count=15, color=(255, 215, 0), duration=800)
-                self.emitters.append(emitter)
+                # emitter = ParticleEmitter(pos, particle_count=15, color=(255, 215, 0), duration=800)
+                # self.emitters.append(emitter)  # Temporarily disabled
                 
                 # Set player to attack animation
                 self.player_anim_state = "attack"
@@ -527,11 +474,11 @@ class MVPCombatScreen:
                 self.player_anim_state = "idle"
                 self.player_anim_timer = current_time
         
-        # Update particle emitters
-        for emitter in self.emitters[:]:
-            emitter.update(dt)
-            if not emitter.alive:
-                self.emitters.remove(emitter)
+        # Update particle emitters (temporarily disabled)
+        # for emitter in self.emitters[:]:
+        #     emitter.update(dt)
+        #     if not emitter.alive:
+        #         self.emitters.remove(emitter)
         
         # Update floating numbers
         for float_num in self.float_numbers[:]:  # Copy list to avoid modification during iteration
@@ -567,7 +514,9 @@ class MVPCombatScreen:
         # Status HUD
         self._render_status_hud_to_surface(temp_surface)
         
-        # Draw particle emitters (TEMPORARILY DISABLED)
+        # Draw particle emitters (COMPLETELY DISABLED)
+        # Clear any remaining emitters to prevent crashes
+        self.emitters.clear()
         # for emitter in self.emitters:
         #     emitter.draw(temp_surface)
         
@@ -949,48 +898,83 @@ class MVPCombatScreen:
     
     # Surface-based rendering methods for camera shake support
     def _render_enemy_zone_to_surface(self, surface):
-        """Render enemy zone to a surface."""
+        """Render enemy zone to a surface with enhanced medieval UI."""
         enemy_zone = self.zones["enemy"]
+        
+        # Get medieval UI textures
+        frame_texture = get_asset("frame_ornate")
+        stone_texture = get_asset("button_texture_stone") 
+        
+        # Draw ornate background panel for enemy zone
+        if frame_texture:
+            # Scale and draw ornate frame
+            frame_scaled = pygame.transform.scale(frame_texture, (enemy_zone.width + 20, enemy_zone.height + 20))
+            frame_rect = frame_scaled.get_rect(center=enemy_zone.center)
+            surface.blit(frame_scaled, frame_rect)
+        else:
+            # Fallback: gradient background with medieval colors
+            self._draw_gradient_rect(surface, enemy_zone, (60, 45, 30), (40, 30, 20))
+            pygame.draw.rect(surface, (120, 90, 60), enemy_zone, 3)  # Bronze border
         
         # Enemy info
         biome_info = self.biomes[self.current_biome]
         enemy_name = biome_info["enemy_type"]
         
-        # Enemy title
+        # Enemy title with enhanced styling
+        title_y = enemy_zone.y + 20
         self.draw_text_outline_to_surface(
             surface,
             enemy_name,
-            (enemy_zone.centerx, enemy_zone.y + 20),
+            (enemy_zone.centerx, title_y),
             self.fonts["large"],
-            self.colors["text_light"]
+            (255, 215, 0),  # Gold text
+            outline_color=(0, 0, 0),
+            outline_width=2
         )
         
         # Enemy stats
         enemy_hp = self.enemy.current_hp
         enemy_max_hp = self.enemy.max_hp
         
-        # HP bar
-        hp_rect = pygame.Rect(enemy_zone.centerx - 100, enemy_zone.y + 60, 200, 20)
-        self.draw_health_bar_to_surface(surface, hp_rect, enemy_hp, enemy_max_hp)
+        # Enhanced HP bar with stone texture
+        hp_bar_width = 220
+        hp_bar_height = 25
+        hp_rect = pygame.Rect(enemy_zone.centerx - hp_bar_width//2, enemy_zone.y + 65, hp_bar_width, hp_bar_height)
         
-        # HP text
+        # Draw HP bar background with stone texture
+        if stone_texture:
+            stone_bg = pygame.transform.scale(stone_texture, (hp_bar_width + 6, hp_bar_height + 6))
+            stone_rect = stone_bg.get_rect(center=hp_rect.center)
+            surface.blit(stone_bg, stone_rect)
+        
+        # HP bar with medieval styling
+        self.draw_enhanced_health_bar_to_surface(surface, hp_rect, enemy_hp, enemy_max_hp)
+        
+        # HP text with gold outline
         hp_text = f"HP: {enemy_hp}/{enemy_max_hp}"
         self.draw_text_outline_to_surface(
             surface,
             hp_text,
-            (enemy_zone.centerx, enemy_zone.y + 90),
+            (enemy_zone.centerx, enemy_zone.y + 105),
             self.fonts["medium"],
-            self.colors["text_light"]
+            (255, 255, 255),
+            outline_color=(0, 0, 0),
+            outline_width=1
         )
         
-        # Enemy intent (shows next action)
+        # Enemy intent with enhanced styling
         if hasattr(self.enemy, 'intent') and hasattr(self.enemy, 'intent_icon'):
-            intent_y = enemy_zone.y + 120
+            intent_y = enemy_zone.y + 135
+            
+            # Intent background
+            intent_bg_rect = pygame.Rect(enemy_zone.centerx - 80, intent_y - 10, 160, 35)
+            self._draw_gradient_rect(surface, intent_bg_rect, (80, 60, 40), (50, 35, 20))
+            pygame.draw.rect(surface, (120, 90, 60), intent_bg_rect, 2)
             
             # Draw icon if available
             if self.intent_icons and self.enemy.intent in self.intent_icons:
                 icon = self.intent_icons[self.enemy.intent]
-                icon_rect = icon.get_rect(center=(enemy_zone.centerx - 20, intent_y))
+                icon_rect = icon.get_rect(center=(enemy_zone.centerx - 25, intent_y + 5))
                 surface.blit(icon, icon_rect)
                 
                 # Value text next to icon
@@ -1016,7 +1000,7 @@ class MVPCombatScreen:
                 )
     
     def _render_hand_to_surface(self, surface):
-        """Render hand to a surface."""
+        """Render hand to a surface with enhanced medieval cards."""
         hand_zone = self.zones["hand"]
         
         if not self.hand.cards:
@@ -1026,7 +1010,9 @@ class MVPCombatScreen:
                 no_cards_text,
                 hand_zone.center,
                 self.fonts["medium"],
-                self.colors["text_light"]
+                (255, 215, 0),  # Gold text
+                outline_color=(0, 0, 0),
+                outline_width=2
             )
             return
         
@@ -1034,9 +1020,9 @@ class MVPCombatScreen:
         mouse_pos = pygame.mouse.get_pos()
         
         # Calculate card positions
-        card_width = 120
-        card_height = 80
-        spacing = 10
+        card_width = 140  # Slightly larger cards
+        card_height = 90
+        spacing = 12
         total_width = len(self.hand.cards) * card_width + (len(self.hand.cards) - 1) * spacing
         start_x = hand_zone.centerx - total_width // 2
         
@@ -1050,22 +1036,66 @@ class MVPCombatScreen:
             # Check hover
             hover = card_rect.collidepoint(mouse_pos)
             
-            # Card background (different color if selected)
-            if i == self.selected_card_index:
-                color = self.colors["selected"]
-            else:
-                color = self.colors["card_bg"]
+            # Get card background texture based on type
+            card_bg_texture = None
+            card_type = card.card_type.value.lower() if hasattr(card, 'card_type') else 'default'
             
-            # Hover glow effect
+            # Try to get specific card background from generated assets
+            possible_backgrounds = [
+                f"{card_type}_card_bg",
+                f"card_bg_{card_type}",
+                "scroll_parchment",
+                "frame_ornate"
+            ]
+            
+            for bg_name in possible_backgrounds:
+                card_bg_texture = get_asset(bg_name)
+                if card_bg_texture:
+                    break
+            
+            # Enhanced hover glow effect
             if hover:
-                glow = pygame.Surface((card_width + 10, card_height + 10), pygame.SRCALPHA)
-                alpha = int((math.sin(pygame.time.get_ticks() * 0.02) + 1) * 60)
-                glow.fill((212, 180, 106, alpha))
+                glow_size = 15
+                glow = pygame.Surface((card_width + glow_size * 2, card_height + glow_size * 2), pygame.SRCALPHA)
+                alpha = int((math.sin(pygame.time.get_ticks() * 0.015) + 1) * 80)
+                glow_color = (255, 215, 0, alpha)  # Golden glow
+                
+                # Create glow gradient
+                center = (glow.get_width() // 2, glow.get_height() // 2)
+                for radius in range(glow_size, 0, -1):
+                    current_alpha = int(alpha * (1 - radius / glow_size))
+                    color_with_alpha = (*glow_color[:3], current_alpha)
+                    pygame.draw.ellipse(glow, color_with_alpha, 
+                                      (center[0] - radius, center[1] - radius//2, 
+                                       radius * 2, radius))
+                
                 glow_rect = glow.get_rect(center=card_rect.center)
-                surface.blit(glow, glow_rect.topleft, special_flags=pygame.BLEND_RGBA_ADD)
+                surface.blit(glow, glow_rect.topleft, special_flags=pygame.BLEND_ADD)
             
-            pygame.draw.rect(surface, color, card_rect)
-            pygame.draw.rect(surface, self.colors["border"], card_rect, 2)
+            # Draw card background
+            if card_bg_texture:
+                # Scale texture to card size
+                scaled_texture = pygame.transform.scale(card_bg_texture, (card_width, card_height))
+                surface.blit(scaled_texture, card_rect)
+                
+                # Add selection highlight
+                if i == self.selected_card_index:
+                    highlight = pygame.Surface((card_width, card_height), pygame.SRCALPHA)
+                    highlight.fill((255, 215, 0, 60))  # Golden highlight
+                    surface.blit(highlight, card_rect)
+            else:
+                # Fallback: gradient background
+                if i == self.selected_card_index:
+                    color1, color2 = (100, 80, 40), (80, 60, 30)  # Selected colors
+                else:
+                    color1, color2 = (70, 55, 35), (50, 40, 25)   # Normal colors
+                
+                self._draw_gradient_rect(surface, card_rect, color1, color2)
+            
+            # Card border
+            border_color = (255, 215, 0) if i == self.selected_card_index else (120, 90, 60)
+            border_width = 3 if i == self.selected_card_index else 2
+            pygame.draw.rect(surface, border_color, card_rect, border_width)
             
             # Card name
             self.draw_text_outline_to_surface(
@@ -1119,85 +1149,236 @@ class MVPCombatScreen:
                 )
     
     def _render_status_hud_to_surface(self, surface):
-        """Render status HUD to a surface."""
+        """Render status HUD to a surface with medieval styling."""
+        # Get UI textures
+        panel_texture = get_asset("button_texture_stone") or get_asset("frame_ornate")
+        
+        # Main HUD panel background
+        hud_rect = pygame.Rect(10, 10, 280, 120)
+        
+        if panel_texture:
+            # Scale and draw panel texture
+            panel_scaled = pygame.transform.scale(panel_texture, (hud_rect.width, hud_rect.height))
+            surface.blit(panel_scaled, hud_rect)
+        else:
+            # Fallback: gradient panel
+            self._draw_gradient_rect(surface, hud_rect, (80, 60, 40), (50, 35, 20))
+        
+        # Panel border
+        pygame.draw.rect(surface, (120, 90, 60), hud_rect, 3)
+        
         # Player status
         player_hp = f"HP: {self.player.current_hp}/{self.player.max_hp}"
         player_mana = f"Energy: {self.player.current_mana}/{self.player.max_mana}"
         
-        # Player HP
-        hp_rect = pygame.Rect(20, 20, 200, 20)
-        self.draw_health_bar_to_surface(surface, hp_rect, self.player.current_hp, self.player.max_hp)
+        # Player HP with enhanced bar
+        hp_rect = pygame.Rect(25, 35, 180, 22)
+        self.draw_enhanced_health_bar_to_surface(surface, hp_rect, self.player.current_hp, self.player.max_hp)
+        
+        # HP label with golden text
         self.draw_text_outline_to_surface(
             surface,
-            player_hp,
+            "Health",
             (hp_rect.centerx, hp_rect.y - 15),
-            self.fonts["medium"],
-            self.colors["text_light"]
+            self.fonts["small"],
+            (255, 215, 0),  # Gold
+            outline_color=(0, 0, 0),
+            outline_width=1
         )
         
-        # Player Energy/Mana
-        mana_rect = pygame.Rect(20, 50, 200, 20)
-        # Mana bar
-        pygame.draw.rect(surface, (50, 50, 100), mana_rect)
-        pygame.draw.rect(surface, self.colors["border"], mana_rect, 2)
-        if self.player.max_mana > 0:
-            fill_width = int((self.player.current_mana / self.player.max_mana) * (mana_rect.width - 4))
-            fill_rect = pygame.Rect(mana_rect.x + 2, mana_rect.y + 2, fill_width, mana_rect.height - 4)
-            pygame.draw.rect(surface, self.colors["mana_blue"], fill_rect)
-        
+        # HP value
         self.draw_text_outline_to_surface(
             surface,
-            player_mana,
-            (mana_rect.centerx, mana_rect.y - 15),
-            self.fonts["medium"],
-            self.colors["text_light"]
+            f"{self.player.current_hp}/{self.player.max_hp}",
+            (hp_rect.centerx, hp_rect.centery),
+            self.fonts["small"],
+            (255, 255, 255),
+            outline_color=(0, 0, 0),
+            outline_width=1
         )
         
-        # Block display
+        # Player Energy/Mana with enhanced bar
+        mana_rect = pygame.Rect(25, 70, 180, 22)
+        
+        # Energy bar background
+        pygame.draw.rect(surface, (40, 30, 20), mana_rect)
+        pygame.draw.rect(surface, (120, 90, 60), mana_rect, 2)
+        
+        # Energy fill with blue gradient
+        if self.player.max_mana > 0:
+            fill_width = int((self.player.current_mana / self.player.max_mana) * mana_rect.width)
+            fill_rect = pygame.Rect(mana_rect.left, mana_rect.top, fill_width, mana_rect.height)
+            self._draw_gradient_rect(surface, fill_rect, (100, 150, 255), (60, 100, 200))
+        
+        # Energy label
+        self.draw_text_outline_to_surface(
+            surface,
+            "Energy",
+            (mana_rect.centerx, mana_rect.y - 15),
+            self.fonts["small"],
+            (100, 200, 255),  # Light blue
+            outline_color=(0, 0, 0),
+            outline_width=1
+        )
+        
+        # Energy value
+        self.draw_text_outline_to_surface(
+            surface,
+            f"{self.player.current_mana}/{self.player.max_mana}",
+            (mana_rect.centerx, mana_rect.centery),
+            self.fonts["small"],
+            (255, 255, 255),
+            outline_color=(0, 0, 0),
+            outline_width=1
+        )
+        
+        # Block display with shield icon effect
         if self.player.block > 0:
-            block_text = f"Block: {self.player.block}"
+            block_rect = pygame.Rect(220, 35, 60, 25)
+            
+            # Block background
+            self._draw_gradient_rect(surface, block_rect, (150, 150, 200), (100, 100, 150))
+            pygame.draw.rect(surface, (200, 200, 255), block_rect, 2)
+            
+            # Block text
+            block_text = f"🛡️ {self.player.block}"
             self.draw_text_outline_to_surface(
                 surface,
                 block_text,
-                (mana_rect.centerx, mana_rect.y + 35),
-                self.fonts["medium"],
-                (100, 100, 255)
+                block_rect.center,
+                self.fonts["small"],
+                (255, 255, 255),
+                outline_color=(0, 0, 0),
+                outline_width=1
             )
     
     def _render_controls_to_surface(self, surface):
-        """Render controls help to a surface."""
+        """Render controls help to a surface with medieval styling."""
         controls = [
-            "← → to select card",
-            "SPACE to play card",
-            "ENTER to end turn",
-            "R to restart",
-            "ESC to return to menu"
+            "← → Select Card",
+            "SPACE Play Card", 
+            "ENTER End Turn",
+            "R Restart Battle",
+            "ESC Return to Menu"
         ]
         
-        start_y = self.height - 120
+        # Controls panel background
+        panel_width = 220
+        panel_height = len(controls) * 25 + 20
+        panel_rect = pygame.Rect(20, self.height - panel_height - 20, panel_width, panel_height)
+        
+        # Get control panel texture
+        panel_texture = get_asset("button_texture_stone")
+        if panel_texture:
+            panel_scaled = pygame.transform.scale(panel_texture, (panel_width, panel_height))
+            surface.blit(panel_scaled, panel_rect)
+        else:
+            # Fallback gradient
+            self._draw_gradient_rect(surface, panel_rect, (60, 45, 30), (40, 30, 20))
+        
+        # Panel border
+        pygame.draw.rect(surface, (120, 90, 60), panel_rect, 2)
+        
+        # Controls title
+        self.draw_text_outline_to_surface(
+            surface,
+            "⚔️ Controls",
+            (panel_rect.centerx, panel_rect.y + 15),
+            self.fonts["small"],
+            (255, 215, 0),  # Gold
+            outline_color=(0, 0, 0),
+            outline_width=1
+        )
+        
+        # Control texts
+        start_y = panel_rect.y + 35
         for i, control in enumerate(controls):
             self.draw_text_outline_to_surface(
                 surface,
                 control,
-                (20, start_y + i * 20),
+                (panel_rect.x + 15, start_y + i * 20),
                 self.fonts["small"],
-                self.colors["text_light"]
+                (220, 220, 220),  # Light gray
+                outline_color=(0, 0, 0),
+                outline_width=1
             )
     
     def _render_floating_numbers_to_surface(self, surface):
-        """Render floating damage numbers to a surface."""
+        """Render floating damage numbers to a surface with enhanced effects."""
         for float_num in self.float_numbers:
-            # Calculate alpha based on remaining time
+            # Calculate alpha and scale based on remaining time
             elapsed = pygame.time.get_ticks() - float_num["start_time"]
             progress = elapsed / float_num["duration"]
             alpha = int(255 * (1 - progress))
             
-            # Create text surface with alpha
-            color_with_alpha = (*float_num["color"], alpha)
-            text_surface = pygame.Surface(self.fonts["large"].size(float_num["text"]), pygame.SRCALPHA)
-            text_rendered = self.fonts["large"].render(float_num["text"], True, float_num["color"])
+            # Scale effect: larger at start, normal at end
+            scale = 1.0 + (1 - progress) * 0.5
+            
+            # Enhanced colors based on damage type
+            base_color = float_num["color"]
+            if base_color == (255, 100, 100):  # Damage - red with fire effect
+                glow_color = (255, 150, 0)  # Orange glow
+                text_color = (255, 200, 200)
+            elif base_color == (100, 255, 100):  # Healing - green with nature effect
+                glow_color = (150, 255, 150)
+                text_color = (200, 255, 200)
+            elif base_color == (100, 100, 255):  # Block - blue with shield effect
+                glow_color = (150, 150, 255)
+                text_color = (200, 200, 255)
+            else:  # Default - gold
+                glow_color = (255, 215, 0)
+                text_color = (255, 235, 150)
+            
+            # Create text with outline and glow
+            text = float_num["text"]
+            font = self.fonts["large"]
+            
+            # Calculate text size with scale
+            text_size = font.size(text)
+            scaled_width = int(text_size[0] * scale)
+            scaled_height = int(text_size[1] * scale)
+            
+            # Create surface for the number with glow
+            text_surface = pygame.Surface((scaled_width + 20, scaled_height + 20), pygame.SRCALPHA)
+            
+            # Draw glow effect (multiple passes with decreasing alpha)
+            glow_alpha = int(alpha * 0.6)
+            for offset in range(8, 0, -2):
+                glow_text = font.render(text, True, (*glow_color, glow_alpha // (offset // 2)))
+                if scale != 1.0:
+                    glow_text = pygame.transform.scale(glow_text, (scaled_width, scaled_height))
+                glow_rect = glow_text.get_rect(center=(text_surface.get_width() // 2, text_surface.get_height() // 2))
+                
+                # Draw glow in multiple positions
+                for dx in range(-offset, offset + 1, offset):
+                    for dy in range(-offset, offset + 1, offset):
+                        if dx != 0 or dy != 0:
+                            pos = (glow_rect.x + dx, glow_rect.y + dy)
+                            text_surface.blit(glow_text, pos, special_flags=pygame.BLEND_ADD)
+            
+            # Draw main text with outline
+            main_text = font.render(text, True, text_color)
+            if scale != 1.0:
+                main_text = pygame.transform.scale(main_text, (scaled_width, scaled_height))
+            
+            # Black outline
+            for dx in range(-2, 3):
+                for dy in range(-2, 3):
+                    if dx != 0 or dy != 0:
+                        outline_pos = (text_surface.get_width() // 2 + dx - scaled_width // 2,
+                                     text_surface.get_height() // 2 + dy - scaled_height // 2)
+                        outline_text = font.render(text, True, (0, 0, 0))
+                        if scale != 1.0:
+                            outline_text = pygame.transform.scale(outline_text, (scaled_width, scaled_height))
+                        text_surface.blit(outline_text, outline_pos)
+            
+            # Draw main text
+            main_pos = (text_surface.get_width() // 2 - scaled_width // 2,
+                       text_surface.get_height() // 2 - scaled_height // 2)
+            text_surface.blit(main_text, main_pos)
+            
+            # Apply overall alpha
             text_surface.set_alpha(alpha)
-            text_surface.blit(text_rendered, (0, 0))
             
             # Draw at current position
             text_rect = text_surface.get_rect(center=float_num["pos"])
@@ -1254,3 +1435,54 @@ class MVPCombatScreen:
             fill_width = int((current / maximum) * (rect.width - 4))
             fill_rect = pygame.Rect(rect.x + 2, rect.y + 2, fill_width, rect.height - 4)
             pygame.draw.rect(surface, self.colors["hp_red"], fill_rect)
+    
+    def _draw_gradient_rect(self, surface, rect, color1, color2):
+        """Draw a vertical gradient rectangle."""
+        for y in range(rect.height):
+            progress = y / rect.height
+            r = int(color1[0] * (1 - progress) + color2[0] * progress)
+            g = int(color1[1] * (1 - progress) + color2[1] * progress)
+            b = int(color1[2] * (1 - progress) + color2[2] * progress)
+            pygame.draw.line(surface, (r, g, b), 
+                           (rect.left, rect.top + y), 
+                           (rect.right, rect.top + y))
+    
+    def draw_enhanced_health_bar_to_surface(self, surface, rect, current, maximum):
+        """Draw enhanced health bar with medieval styling."""
+        # Background with dark stone
+        pygame.draw.rect(surface, (40, 30, 20), rect)
+        pygame.draw.rect(surface, (120, 90, 60), rect, 2)  # Bronze border
+        
+        # Health fill with gradient
+        if current > 0 and maximum > 0:
+            fill_width = int(rect.width * (current / maximum))
+            fill_rect = pygame.Rect(rect.left, rect.top, fill_width, rect.height)
+            
+            # Health color based on percentage
+            health_percent = current / maximum
+            if health_percent > 0.6:
+                color1, color2 = (100, 200, 100), (60, 150, 60)  # Green
+            elif health_percent > 0.3:
+                color1, color2 = (200, 200, 100), (150, 150, 60)  # Yellow
+            else:
+                color1, color2 = (200, 100, 100), (150, 60, 60)   # Red
+            
+            self._draw_gradient_rect(surface, fill_rect, color1, color2)
+            
+        # Inner shadow
+        pygame.draw.rect(surface, (20, 15, 10), rect, 1)
+    
+    def draw_text_outline_to_surface(self, surface, text, pos, font, color, outline_color=(0, 0, 0), outline_width=2):
+        """Draw text with outline to surface."""
+        # Draw outline
+        for dx in range(-outline_width, outline_width + 1):
+            for dy in range(-outline_width, outline_width + 1):
+                if dx != 0 or dy != 0:
+                    outline_surface = font.render(text, True, outline_color)
+                    outline_rect = outline_surface.get_rect(center=(pos[0] + dx, pos[1] + dy))
+                    surface.blit(outline_surface, outline_rect)
+        
+        # Draw main text
+        text_surface = font.render(text, True, color)
+        text_rect = text_surface.get_rect(center=pos)
+        surface.blit(text_surface, text_rect)
