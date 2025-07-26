@@ -7,8 +7,10 @@ Usa os sistemas MVP mas integrado ao fluxo normal do jogo.
 import pygame
 import logging
 import math
+import random
 from typing import Optional, Dict, Any, List
 from pathlib import Path
+from collections import deque
 
 from ..utils.config import Config
 from ..gameplay.mvp_cards import Card, CardType, Hand
@@ -16,6 +18,95 @@ from ..gameplay.mvp_deck import MVPDeck
 from ..core.mvp_turn_engine import MVPTurnEngine, MVPPlayer, MVPEnemy
 
 logger = logging.getLogger(__name__)
+
+
+class ParticleEmitter:
+    """Simple particle emitter for combat effects."""
+    
+    def __init__(self, pos, particle_count=20, color=(255, 255, 100), duration=1000):
+        self.pos = pos
+        self.particles = []
+        self.duration = duration
+        self.start_time = pygame.time.get_ticks()
+        self.alive = True
+        
+        # Create particles
+        for _ in range(particle_count):
+            particle = {
+                "pos": [pos[0] + random.randint(-10, 10), pos[1] + random.randint(-10, 10)],
+                "vel": [random.uniform(-2, 2), random.uniform(-3, -1)],
+                "color": color,
+                "life": random.uniform(0.5, 1.0),
+                "initial_life": random.uniform(0.5, 1.0)
+            }
+            self.particles.append(particle)
+    
+    def update(self, dt):
+        """Update particle positions and life."""
+        current_time = pygame.time.get_ticks()
+        if current_time - self.start_time > self.duration:
+            self.alive = False
+            return
+        
+        for particle in self.particles[:]:
+            particle["pos"][0] += particle["vel"][0] * dt * 60
+            particle["pos"][1] += particle["vel"][1] * dt * 60
+            particle["life"] -= dt
+            
+            if particle["life"] <= 0:
+                self.particles.remove(particle)
+        
+        if not self.particles:
+            self.alive = False
+    
+    def draw(self, screen):
+        """Draw particles."""
+        for particle in self.particles:
+            try:
+                alpha = int(255 * (particle["life"] / particle["initial_life"]))
+                color = particle["color"]  # Should be RGB tuple (r, g, b)
+                
+                # Ensure color is valid RGB tuple
+                if len(color) != 3:
+                    color = (255, 255, 0)  # Fallback to yellow
+                
+                # Create a surface for alpha blending
+                particle_surf = pygame.Surface((6, 6), pygame.SRCALPHA)
+                particle_surf.fill(color)
+                particle_surf.set_alpha(alpha)  # Set alpha separately
+                screen.blit(particle_surf, particle["pos"])
+            except Exception as e:
+                print(f"Particle draw error: {e}, color: {particle['color']}")
+                continue
+
+
+class Camera:
+    """Simple camera shake system."""
+    
+    shake_offset = [0, 0]
+    shake_timer = 0
+    shake_intensity = 0
+    
+    @classmethod
+    def shake(cls, intensity=5, frames=8):
+        """Start camera shake."""
+        cls.shake_intensity = intensity
+        cls.shake_timer = frames
+    
+    @classmethod
+    def update(cls):
+        """Update camera shake."""
+        if cls.shake_timer > 0:
+            cls.shake_offset[0] = random.randint(-cls.shake_intensity, cls.shake_intensity)
+            cls.shake_offset[1] = random.randint(-cls.shake_intensity, cls.shake_intensity)
+            cls.shake_timer -= 1
+        else:
+            cls.shake_offset = [0, 0]
+    
+    @classmethod
+    def apply_to_pos(cls, pos):
+        """Apply shake to position."""
+        return (pos[0] + cls.shake_offset[0], pos[1] + cls.shake_offset[1])
 
 
 class MVPCombatScreen:
@@ -113,6 +204,9 @@ class MVPCombatScreen:
         self.card_animation = None
         self.card_anim_timer = 0
         self.float_numbers = []  # For damage numbers
+        self.emitters = []  # For particle effects
+        self.player_anim_state = "idle"  # Track player animation state
+        self.player_anim_timer = 0
         
         # Start combat
         self._start_combat()
@@ -154,7 +248,7 @@ class MVPCombatScreen:
                 enemy.intent_icon = "🛡"
     
     def _enemy_turn(self) -> None:
-        """Execute enemy turn with proper block mechanics."""
+        """Execute enemy turn with proper block mechanics and camera shake."""
         if hasattr(self.enemy, 'intent') and self.enemy.intent == "attack":
             # Calculate damage after block
             damage = max(0, self.enemy.attack - self.player.block)
@@ -173,6 +267,10 @@ class MVPCombatScreen:
                     "duration": 1000,
                     "color": (255, 100, 100)
                 })
+                
+                # Camera shake for high damage
+                if damage > 5:
+                    Camera.shake(intensity=6, frames=4)
             
             logger.info(f"Enemy attacked for {damage} damage (blocked: {self.enemy.attack - damage})")
         else:
@@ -271,22 +369,40 @@ class MVPCombatScreen:
                     selected_card = self.hand.cards[self.selected_card_index]
                     self._play_card(selected_card)
                     
-                elif event.key == pygame.K_RETURN:
-                    # End turn or restart if game over
-                    if self.game_over:
-                        self._start_combat()
-                    else:
-                        # Recharge energy on turn end
-                        self.player.current_mana = self.player.max_mana
-                        self.turn_engine.end_player_turn()
+            elif event.key == pygame.K_RETURN:
+                # End turn or restart if game over
+                if self.game_over:
+                    self._start_combat()
+                else:
+                    # Discard current hand
+                    for card in self.hand.cards:
+                        self.deck.discard_pile.append(card)
+                    self.hand.cards.clear()
+                    
+                    # Draw new hand with reshuffle if needed
+                    for _ in range(5):
+                        # Check if draw pile is empty and reshuffle if needed
+                        if not self.deck.draw_pile and self.deck.discard_pile:
+                            # Reshuffle discard into draw pile
+                            self.deck.draw_pile = deque(random.sample(self.deck.discard_pile, len(self.deck.discard_pile)))
+                            self.deck.discard_pile.clear()
+                            logger.info("Reshuffled discard pile into draw pile")
                         
-                        # Enemy takes their turn
-                        self._enemy_turn()
-                        
-                        # Prepare next intent after enemy turn
-                        self._prepare_enemy_intent(self.enemy)
-                        
-                        logger.info("Player turn ended, energy recharged")
+                        card = self.deck.draw_card()
+                        if card:
+                            self.hand.add_card(card)
+                    
+                    # Recharge energy on turn end
+                    self.player.current_mana = self.player.max_mana
+                    self.turn_engine.end_player_turn()
+                    
+                    # Enemy takes their turn
+                    self._enemy_turn()
+                    
+                    # Prepare next intent after enemy turn
+                    self._prepare_enemy_intent(self.enemy)
+                    
+                    logger.info("Player turn ended, energy recharged, new hand drawn")
                     
             elif event.key == pygame.K_r:
                 # Restart combat
@@ -323,6 +439,10 @@ class MVPCombatScreen:
                         "duration": 1000,  # 1 second
                         "color": (255, 100, 100)  # Red for damage
                     })
+                    
+                    # Create particle effect on enemy
+                    emitter = ParticleEmitter(enemy_pos, particle_count=10, color=(255, 100, 100), duration=600)
+                    self.emitters.append(emitter)
                 
                 # Create healing number
                 if card.heal > 0:
@@ -379,14 +499,39 @@ class MVPCombatScreen:
             pygame.draw.rect(surface, self.colors["hp_red"], fill_rect)
     
     def update(self, dt: float) -> None:
-        """Update combat screen."""
+        """Update combat screen with all enhancements."""
         current_time = pygame.time.get_ticks()
+        
+        # Update camera shake
+        Camera.update()
         
         # Update card animation
         if self.card_animation:
             elapsed = current_time - self.card_animation["start_time"]
             if elapsed >= self.card_animation["duration"]:
+                # Create particle effect when card animation ends
+                pos = self.card_animation["target_pos"]
+                emitter = ParticleEmitter(pos, particle_count=15, color=(255, 215, 0), duration=800)
+                self.emitters.append(emitter)
+                
+                # Set player to attack animation
+                self.player_anim_state = "attack"
+                self.player_anim_timer = current_time
+                
+                # Clear animation
                 self.card_animation = None
+        
+        # Update player animation state - reset to idle after attack
+        if self.player_anim_state == "attack":
+            if current_time - self.player_anim_timer > 500:  # 0.5 seconds attack duration
+                self.player_anim_state = "idle"
+                self.player_anim_timer = current_time
+        
+        # Update particle emitters
+        for emitter in self.emitters[:]:
+            emitter.update(dt)
+            if not emitter.alive:
+                self.emitters.remove(emitter)
         
         # Update floating numbers
         for float_num in self.float_numbers[:]:  # Copy list to avoid modification during iteration
@@ -399,35 +544,49 @@ class MVPCombatScreen:
                 float_num["pos"][1] -= dt * 50  # Move up 50 pixels per second
     
     def draw(self) -> None:
-        """Draw the combat screen."""
+        """Draw the combat screen with camera shake."""
+        # Apply camera shake to all rendering
+        shake_offset = Camera.shake_offset
+        
+        # Create a surface for shake effect
+        temp_surface = pygame.Surface((self.width, self.height))
+        
         # Background
         current_bg = self.biomes[self.current_biome]["background"]
         if current_bg:
-            self.screen.blit(current_bg, (0, 0))
+            temp_surface.blit(current_bg, (0, 0))
         else:
-            self.screen.fill(self.colors["background"])
+            temp_surface.fill(self.colors["background"])
         
         # Enemy zone
-        self._render_enemy_zone()
+        self._render_enemy_zone_to_surface(temp_surface)
         
         # Player hand
-        self._render_hand()
+        self._render_hand_to_surface(temp_surface)
         
         # Status HUD
-        self._render_status_hud()
+        self._render_status_hud_to_surface(temp_surface)
+        
+        # Draw particle emitters (TEMPORARILY DISABLED)
+        # for emitter in self.emitters:
+        #     emitter.draw(temp_surface)
         
         # Controls help
-        self._render_controls()
-        
-        # Game over overlay
-        if self.game_over:
-            self._render_game_over()
+        self._render_controls_to_surface(temp_surface)
         
         # Render floating numbers
-        self._render_floating_numbers()
+        self._render_floating_numbers_to_surface(temp_surface)
         
         # Render card animation
         if self.card_animation:
+            self._render_card_animation_to_surface(temp_surface)
+        
+        # Apply shake and blit to main screen
+        self.screen.blit(temp_surface, shake_offset)
+        
+        # Game over overlay (no shake)
+        if self.game_over:
+            self._render_game_over()
             self._render_card_animation()
     
     def _render_enemy_zone(self):
@@ -787,3 +946,311 @@ class MVPCombatScreen:
     def exit_screen(self) -> None:
         """Called when screen becomes inactive."""
         logger.info("Exiting MVP Combat Screen")
+    
+    # Surface-based rendering methods for camera shake support
+    def _render_enemy_zone_to_surface(self, surface):
+        """Render enemy zone to a surface."""
+        enemy_zone = self.zones["enemy"]
+        
+        # Enemy info
+        biome_info = self.biomes[self.current_biome]
+        enemy_name = biome_info["enemy_type"]
+        
+        # Enemy title
+        self.draw_text_outline_to_surface(
+            surface,
+            enemy_name,
+            (enemy_zone.centerx, enemy_zone.y + 20),
+            self.fonts["large"],
+            self.colors["text_light"]
+        )
+        
+        # Enemy stats
+        enemy_hp = self.enemy.current_hp
+        enemy_max_hp = self.enemy.max_hp
+        
+        # HP bar
+        hp_rect = pygame.Rect(enemy_zone.centerx - 100, enemy_zone.y + 60, 200, 20)
+        self.draw_health_bar_to_surface(surface, hp_rect, enemy_hp, enemy_max_hp)
+        
+        # HP text
+        hp_text = f"HP: {enemy_hp}/{enemy_max_hp}"
+        self.draw_text_outline_to_surface(
+            surface,
+            hp_text,
+            (enemy_zone.centerx, enemy_zone.y + 90),
+            self.fonts["medium"],
+            self.colors["text_light"]
+        )
+        
+        # Enemy intent (shows next action)
+        if hasattr(self.enemy, 'intent') and hasattr(self.enemy, 'intent_icon'):
+            intent_y = enemy_zone.y + 120
+            
+            # Draw icon if available
+            if self.intent_icons and self.enemy.intent in self.intent_icons:
+                icon = self.intent_icons[self.enemy.intent]
+                icon_rect = icon.get_rect(center=(enemy_zone.centerx - 20, intent_y))
+                surface.blit(icon, icon_rect)
+                
+                # Value text next to icon
+                intent_color = (255, 100, 100) if self.enemy.intent == "attack" else (100, 100, 255)
+                value_text = str(self.enemy.intent_value)
+                self.draw_text_outline_to_surface(
+                    surface,
+                    value_text,
+                    (enemy_zone.centerx + 10, intent_y),
+                    self.fonts["medium"],
+                    intent_color
+                )
+            else:
+                # Fallback to text only
+                intent_text = f"{self.enemy.intent_icon} {self.enemy.intent_value}"
+                intent_color = (255, 100, 100) if self.enemy.intent == "attack" else (100, 100, 255)
+                self.draw_text_outline_to_surface(
+                    surface,
+                    intent_text,
+                    (enemy_zone.centerx, intent_y),
+                    self.fonts["medium"],
+                    intent_color
+                )
+    
+    def _render_hand_to_surface(self, surface):
+        """Render hand to a surface."""
+        hand_zone = self.zones["hand"]
+        
+        if not self.hand.cards:
+            no_cards_text = "No cards in hand"
+            self.draw_text_outline_to_surface(
+                surface,
+                no_cards_text,
+                hand_zone.center,
+                self.fonts["medium"],
+                self.colors["text_light"]
+            )
+            return
+        
+        # Get mouse position for hover detection
+        mouse_pos = pygame.mouse.get_pos()
+        
+        # Calculate card positions
+        card_width = 120
+        card_height = 80
+        spacing = 10
+        total_width = len(self.hand.cards) * card_width + (len(self.hand.cards) - 1) * spacing
+        start_x = hand_zone.centerx - total_width // 2
+        
+        for i, card in enumerate(self.hand.cards):
+            x = start_x + i * (card_width + spacing)
+            y = hand_zone.y + (hand_zone.height - card_height) // 2
+            
+            # Card rect
+            card_rect = pygame.Rect(x, y, card_width, card_height)
+            
+            # Check hover
+            hover = card_rect.collidepoint(mouse_pos)
+            
+            # Card background (different color if selected)
+            if i == self.selected_card_index:
+                color = self.colors["selected"]
+            else:
+                color = self.colors["card_bg"]
+            
+            # Hover glow effect
+            if hover:
+                glow = pygame.Surface((card_width + 10, card_height + 10), pygame.SRCALPHA)
+                alpha = int((math.sin(pygame.time.get_ticks() * 0.02) + 1) * 60)
+                glow.fill((212, 180, 106, alpha))
+                glow_rect = glow.get_rect(center=card_rect.center)
+                surface.blit(glow, glow_rect.topleft, special_flags=pygame.BLEND_RGBA_ADD)
+            
+            pygame.draw.rect(surface, color, card_rect)
+            pygame.draw.rect(surface, self.colors["border"], card_rect, 2)
+            
+            # Card name
+            self.draw_text_outline_to_surface(
+                surface,
+                card.name,
+                (card_rect.centerx, card_rect.y + 15),
+                self.fonts["small"],
+                self.colors["text_light"]
+            )
+            
+            # Card cost
+            cost_text = f"⚡{card.mana_cost}"
+            cost_color = self.colors["mana_blue"] if self.player.current_mana >= card.mana_cost else (150, 50, 50)
+            self.draw_text_outline_to_surface(
+                surface,
+                cost_text,
+                (card_rect.x + 15, card_rect.y + 35),
+                self.fonts["small"],
+                cost_color
+            )
+            
+            # Card effect
+            if card.damage > 0:
+                dmg_text = f"⚔{card.damage}"
+                self.draw_text_outline_to_surface(
+                    surface,
+                    dmg_text,
+                    (card_rect.x + 15, card_rect.y + 50),
+                    self.fonts["small"],
+                    (255, 100, 100)
+                )
+            
+            if card.block > 0:
+                block_text = f"🛡{card.block}"
+                self.draw_text_outline_to_surface(
+                    surface,
+                    block_text,
+                    (card_rect.x + 60, card_rect.y + 50),
+                    self.fonts["small"],
+                    (100, 100, 255)
+                )
+            
+            if card.heal > 0:
+                heal_text = f"❤{card.heal}"
+                self.draw_text_outline_to_surface(
+                    surface,
+                    heal_text,
+                    (card_rect.x + 90, card_rect.y + 50),
+                    self.fonts["small"],
+                    (100, 255, 100)
+                )
+    
+    def _render_status_hud_to_surface(self, surface):
+        """Render status HUD to a surface."""
+        # Player status
+        player_hp = f"HP: {self.player.current_hp}/{self.player.max_hp}"
+        player_mana = f"Energy: {self.player.current_mana}/{self.player.max_mana}"
+        
+        # Player HP
+        hp_rect = pygame.Rect(20, 20, 200, 20)
+        self.draw_health_bar_to_surface(surface, hp_rect, self.player.current_hp, self.player.max_hp)
+        self.draw_text_outline_to_surface(
+            surface,
+            player_hp,
+            (hp_rect.centerx, hp_rect.y - 15),
+            self.fonts["medium"],
+            self.colors["text_light"]
+        )
+        
+        # Player Energy/Mana
+        mana_rect = pygame.Rect(20, 50, 200, 20)
+        # Mana bar
+        pygame.draw.rect(surface, (50, 50, 100), mana_rect)
+        pygame.draw.rect(surface, self.colors["border"], mana_rect, 2)
+        if self.player.max_mana > 0:
+            fill_width = int((self.player.current_mana / self.player.max_mana) * (mana_rect.width - 4))
+            fill_rect = pygame.Rect(mana_rect.x + 2, mana_rect.y + 2, fill_width, mana_rect.height - 4)
+            pygame.draw.rect(surface, self.colors["mana_blue"], fill_rect)
+        
+        self.draw_text_outline_to_surface(
+            surface,
+            player_mana,
+            (mana_rect.centerx, mana_rect.y - 15),
+            self.fonts["medium"],
+            self.colors["text_light"]
+        )
+        
+        # Block display
+        if self.player.block > 0:
+            block_text = f"Block: {self.player.block}"
+            self.draw_text_outline_to_surface(
+                surface,
+                block_text,
+                (mana_rect.centerx, mana_rect.y + 35),
+                self.fonts["medium"],
+                (100, 100, 255)
+            )
+    
+    def _render_controls_to_surface(self, surface):
+        """Render controls help to a surface."""
+        controls = [
+            "← → to select card",
+            "SPACE to play card",
+            "ENTER to end turn",
+            "R to restart",
+            "ESC to return to menu"
+        ]
+        
+        start_y = self.height - 120
+        for i, control in enumerate(controls):
+            self.draw_text_outline_to_surface(
+                surface,
+                control,
+                (20, start_y + i * 20),
+                self.fonts["small"],
+                self.colors["text_light"]
+            )
+    
+    def _render_floating_numbers_to_surface(self, surface):
+        """Render floating damage numbers to a surface."""
+        for float_num in self.float_numbers:
+            # Calculate alpha based on remaining time
+            elapsed = pygame.time.get_ticks() - float_num["start_time"]
+            progress = elapsed / float_num["duration"]
+            alpha = int(255 * (1 - progress))
+            
+            # Create text surface with alpha
+            color_with_alpha = (*float_num["color"], alpha)
+            text_surface = pygame.Surface(self.fonts["large"].size(float_num["text"]), pygame.SRCALPHA)
+            text_rendered = self.fonts["large"].render(float_num["text"], True, float_num["color"])
+            text_surface.set_alpha(alpha)
+            text_surface.blit(text_rendered, (0, 0))
+            
+            # Draw at current position
+            text_rect = text_surface.get_rect(center=float_num["pos"])
+            surface.blit(text_surface, text_rect)
+    
+    def _render_card_animation_to_surface(self, surface):
+        """Render animated card moving to center on a surface."""
+        if not self.card_animation:
+            return
+            
+        current_time = pygame.time.get_ticks()
+        elapsed = current_time - self.card_animation["start_time"]
+        progress = min(1.0, elapsed / self.card_animation["duration"])
+        
+        # Interpolate position (simple linear for now)
+        target_pos = self.card_animation["target_pos"]
+        
+        # Draw card at animated position
+        card_rect = pygame.Rect(0, 0, 120, 80)
+        card_rect.center = target_pos
+        
+        # Draw animated card
+        pygame.draw.rect(surface, (255, 215, 0), card_rect)
+        pygame.draw.rect(surface, (255, 255, 255), card_rect, 2)
+        
+        # Card name
+        card_name = self.card_animation["card"].name
+        name_surface = self.fonts["medium"].render(card_name, True, (0, 0, 0))
+        name_rect = name_surface.get_rect(center=card_rect.center)
+        surface.blit(name_surface, name_rect)
+    
+    def draw_text_outline_to_surface(self, surface, text, pos, font, color):
+        """Draw text with outline to a surface."""
+        x, y = pos
+        # Outline
+        outline_color = (0, 0, 0)
+        for dx in [-1, 0, 1]:
+            for dy in [-1, 0, 1]:
+                if dx != 0 or dy != 0:
+                    outline_surf = font.render(text, True, outline_color)
+                    surface.blit(outline_surf, (x + dx, y + dy))
+        # Main text
+        text_surf = font.render(text, True, color)
+        surface.blit(text_surf, pos)
+    
+    def draw_health_bar_to_surface(self, surface, rect, current, maximum):
+        """Draw health bar to a surface."""
+        # Background
+        pygame.draw.rect(surface, (100, 50, 50), rect)
+        pygame.draw.rect(surface, self.colors["border"], rect, 2)
+        
+        # Fill
+        if maximum > 0:
+            fill_width = int((current / maximum) * (rect.width - 4))
+            fill_rect = pygame.Rect(rect.x + 2, rect.y + 2, fill_width, rect.height - 4)
+            pygame.draw.rect(surface, self.colors["hp_red"], fill_rect)
