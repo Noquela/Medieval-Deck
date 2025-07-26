@@ -50,18 +50,19 @@ class MenuScreen:
         # Animation states  
         self.animation_time = 0.0
         
-        # Simple menu buttons - now with combat test option
+        # Simple menu buttons - now with MVP Combat option
         button_width = 250
         button_height = 60
         button_spacing = 80
-        start_y = self.height // 2 - 80
+        start_y = self.height // 2 - 120  # Ajustado para 5 botões
         center_x = self.width // 2 - button_width // 2
         
         self.buttons = [
             {"text": "Start Game", "rect": pygame.Rect(center_x, start_y, button_width, button_height), "action": "new_game"},
-            {"text": "Combat Test", "rect": pygame.Rect(center_x, start_y + button_spacing, button_width, button_height), "action": "combat_test"},
-            {"text": "Settings", "rect": pygame.Rect(center_x, start_y + (button_spacing * 2), button_width, button_height), "action": "settings"},
-            {"text": "Quit Game", "rect": pygame.Rect(center_x, start_y + (button_spacing * 3), button_width, button_height), "action": "quit_game"},
+            {"text": "MVP Combat", "rect": pygame.Rect(center_x, start_y + button_spacing, button_width, button_height), "action": "mvp_combat"},
+            {"text": "Combat Test", "rect": pygame.Rect(center_x, start_y + (button_spacing * 2), button_width, button_height), "action": "combat_test"},
+            {"text": "Settings", "rect": pygame.Rect(center_x, start_y + (button_spacing * 3), button_width, button_height), "action": "settings"},
+            {"text": "Quit Game", "rect": pygame.Rect(center_x, start_y + (button_spacing * 4), button_width, button_height), "action": "quit_game"},
         ]
         
         # Fonts

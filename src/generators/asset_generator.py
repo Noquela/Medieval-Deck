@@ -695,7 +695,7 @@ class AssetGenerator:
             return self._create_fallback_menu_background()
         
         # Prompt otimizado para menu principal
-        prompt = "grand medieval castle great hall, stone walls with hanging banners, epic cinematic lighting, dramatic atmosphere, gothic architecture, empty majestic scene, masterpiece, high quality, detailed"
+        prompt = "medieval castle great hall, stone walls, banners, dramatic lighting"
         
         logger.info("Gerando background do menu principal com IA...")
         
@@ -740,11 +740,13 @@ class AssetGenerator:
         Returns:
             Imagem PIL do sprite do personagem
         """
-        # Mapear nomes para prompts específicos
+        # Mapear nomes para prompts específicos (máximo 77 tokens)
         prompt_map = {
-            "Cavaleiro Valente": "full body illustration of a valiant medieval knight in golden armor, epic heroic pose, detailed armor with engravings, cape flowing, masterpiece character art, high quality",
-            "Mestre Arcano": "full body illustration of an arcane wizard in dark blue robes, magical aura, staff with glowing orb, mystical energy swirling around, detailed character art, high quality",
-            "Assassino das Sombras": "full body illustration of a shadow assassin with dark hood, leather armor, daggers, mysterious pose in shadows, detailed character art, high quality"
+            "Cavaleiro Valente": "medieval knight in golden armor, heroic pose, cape, masterpiece",
+            "Mestre Arcano": "wizard in blue robes, magical staff, glowing orb, mystical aura",
+            "Assassino das Sombras": "shadow assassin, dark hood, leather armor, daggers, shadows",
+            "Goblin Scout": "green goblin scout, tribal warrior, crude weapons, menacing",
+            "Skeleton Warrior": "skeleton warrior, bone armor, undead fighter, ancient"
         }
         
         cache_key = f"{character_name}_sprite"
@@ -824,7 +826,9 @@ class AssetGenerator:
         theme_colors = {
             "Cavaleiro Valente": (255, 215, 0),      # Dourado
             "Mestre Arcano": (138, 43, 226),         # Roxo
-            "Assassino das Sombras": (105, 105, 105) # Cinza escuro
+            "Assassino das Sombras": (105, 105, 105), # Cinza escuro
+            "Goblin Scout": (34, 139, 34),           # Verde
+            "Skeleton Warrior": (220, 220, 220)      # Branco osso
         }
         
         color = theme_colors.get(character_name, (128, 128, 128))
@@ -887,9 +891,9 @@ class AssetGenerator:
             Dicionário com paths dos backgrounds gerados
         """
         character_prompts = {
-            "knight": "medieval castle courtyard at golden hour, stone walls with banners, empty training ground, armor stands, medieval architecture, no people, environment only, scenic background",
-            "wizard": "ancient wizard tower interior, floating books and scrolls, magical crystals, arcane symbols on walls, mystical library, empty study room, no people, environment only, scenic background", 
-            "assassin": "dark medieval alley at night, stone buildings with shadows, moonlight through narrow passages, empty streets, gothic architecture, no people, environment only, scenic background"
+            "knight": "medieval castle courtyard, stone walls, banners, training ground",
+            "wizard": "wizard tower interior, floating books, magical crystals, arcane symbols", 
+            "assassin": "dark medieval alley at night, stone buildings, shadows, moonlight"
         }
         
         if not self.sdxl_pipeline:
@@ -972,13 +976,13 @@ class AssetGenerator:
             Dicionário com paths dos backgrounds gerados
         """
         cinematic_prompts = {
-            "menu_cinematic": "vast ancient castle great hall, cathedral ceiling with stone arches, dramatic cinematic lighting, golden hour sunbeams through tall gothic windows, empty throne room, epic medieval atmosphere, masterpiece, high detail, atmospheric, no people",
+            "menu_cinematic": "castle great hall, cathedral ceiling, dramatic lighting, golden sunbeams",
             
-            "knight_cinematic": "medieval castle courtyard at sunrise, wet cobblestone ground reflecting golden light, stone walls with heraldic banners flowing in breeze, empty training ground with weapon racks, dramatic lighting, cinematic composition, epic medieval atmosphere, no people",
+            "knight_cinematic": "castle courtyard sunrise, cobblestone, golden light, banners",
             
-            "wizard_cinematic": "ancient arcane library tower interior, floating mystical books and glowing scrolls in air, luminous magical runes carved in stone walls, crystal orbs emanating soft blue light, mystical haze and particle effects, cinematic lighting, magical atmosphere, no people",
+            "wizard_cinematic": "arcane library tower, floating books, glowing runes, crystal orbs",
             
-            "assassin_cinematic": "moonlit medieval alley at night, narrow cobblestone passage between tall stone buildings, soft fog rolling through shadows, flickering lantern light creating dramatic contrasts, gothic architecture silhouettes, atmospheric lighting, mysterious ambiance, no people"
+            "assassin_cinematic": "moonlit medieval alley, cobblestone passage, fog, lantern light"
         }
         
         if not self.sdxl_pipeline:
@@ -1062,11 +1066,11 @@ class AssetGenerator:
             Dicionário com paths dos sprites gerados
         """
         character_prompts = {
-            "knight_sprite": "full body medieval knight portrait standing pose, golden ornate armor with intricate engravings, noble stance, detailed metalwork, heroic proportions, high quality render, transparent background, no background",
+            "knight_sprite": "medieval knight standing, golden armor, noble stance, heroic",
             
-            "wizard_sprite": "full body arcane wizard portrait standing pose, flowing blue and purple mystical robes with magical symbols, wise elderly appearance, staff with glowing crystal, magical aura, transparent background, no background",
+            "wizard_sprite": "arcane wizard standing, blue robes, staff, glowing crystal",
             
-            "assassin_sprite": "full body shadow assassin portrait standing pose, dark leather armor and cloak, mysterious hooded figure, agile build, twin daggers, stealthy appearance, transparent background, no background"
+            "assassin_sprite": "shadow assassin standing, leather armor, cloak, daggers"
         }
         
         if not self.sdxl_pipeline:
@@ -1235,19 +1239,19 @@ class AssetGenerator:
             Dicionário com paths dos assets gerados
         """
         ui_prompts = {
-            "button_texture_gold": "medieval gilded button texture with intricate golden engravings, ornate border details, metallic surface, luxury finish, seamless texture, high quality",
+            "button_texture_gold": "medieval golden button, ornate border, metallic texture",
             
-            "button_texture_stone": "medieval stone button texture with carved details, weathered surface, ancient craftsmanship, granite-like appearance, seamless texture",
+            "button_texture_stone": "medieval stone button, carved details, weathered granite",
             
-            "button_texture_mystical": "mystical magical button texture with glowing runes, ethereal energy patterns, purple and blue magical aura, enchanted surface",
+            "button_texture_mystical": "mystical button, glowing runes, purple magical aura",
             
-            "arrow_left_icon": "ornamental medieval arrow icon pointing left, golden metallic finish, decorative flourishes, heraldic style, 64x64 pixels, transparent background",
+            "arrow_left_icon": "medieval arrow left, golden metallic, decorative heraldic style",
             
-            "arrow_right_icon": "ornamental medieval arrow icon pointing right, golden metallic finish, decorative flourishes, heraldic style, 64x64 pixels, transparent background",
+            "arrow_right_icon": "medieval arrow right, golden metallic, decorative heraldic style", 
             
-            "scroll_texture": "ancient parchment scroll texture, aged paper with decorative borders, medieval manuscript style, seamless pattern",
+            "scroll_texture": "ancient parchment scroll, aged paper, decorative borders",
             
-            "frame_ornate": "ornate medieval frame border with golden filigree, decorative corners, royal heraldic design, transparent center"
+            "frame_ornate": "ornate medieval frame, golden filigree, decorative corners"
         }
         
         if not self.sdxl_pipeline:
@@ -1313,7 +1317,7 @@ class AssetGenerator:
                 }
                 
                 generated_paths[asset_id] = str(asset_path)
-                logger.info(f"✅ Asset UI {asset_id} gerado: {asset_path}")
+                logger.info(f"Asset UI {asset_id} gerado: {asset_path}")
                 
             except Exception as e:
                 logger.error(f"Erro ao gerar asset UI {asset_id}: {e}")
@@ -1394,15 +1398,15 @@ class AssetGenerator:
         # Prompts melhorados para personagens (só cenários)
         enhanced_character_prompts = {
             "knight": {
-                "prompt": "masterpiece, high quality, detailed, medieval castle courtyard at golden hour, stone walls with banners, training grounds, armory in background, dramatic lighting, gothic architecture, epic cinematic composition, wide panoramic view",
+                "prompt": "castle courtyard golden hour, stone walls, banners, training grounds",
                 "negative": "people, person, human, character, figure, knight, warrior, armor, weapons, face, body"
             },
             "wizard": {
-                "prompt": "masterpiece, high quality, detailed, ancient magical tower library, floating mystical orbs, arcane symbols glowing on walls, enchanted bookshelves, crystal formations, magical energy streams, atmospheric lighting, wide panoramic mystical scene",
+                "prompt": "magical tower library, floating orbs, glowing symbols, crystal formations",
                 "negative": "people, person, human, character, figure, wizard, mage, face, body, hands"
             },
             "assassin": {
-                "prompt": "masterpiece, high quality, detailed, dark medieval alleyway at night, stone buildings with shadows, moonlight filtering through narrow passages, mysterious fog, lanterns casting eerie light, gothic architecture, cinematic wide view",
+                "prompt": "dark medieval alley night, stone buildings, shadows, moonlight, fog",
                 "negative": "people, person, human, character, figure, assassin, rogue, face, body, weapons"
             }
         }
@@ -1410,15 +1414,15 @@ class AssetGenerator:
         # Prompts para outros backgrounds
         enhanced_general_prompts = {
             "menu": {
-                "prompt": "masterpiece, high quality, detailed, grand medieval throne room, ornate stone architecture, stained glass windows, royal banners hanging, dramatic lighting from torches, majestic hall perspective, cinematic ultrawide composition",
+                "prompt": "medieval throne room, ornate stone, stained glass, royal banners",
                 "negative": "people, person, human, character, figure, face, body"
             },
             "castle": {
-                "prompt": "masterpiece, high quality, detailed, medieval castle on hilltop at sunset, massive stone walls, multiple towers with flags, dramatic clouds, golden hour lighting, epic landscape vista, cinematic ultrawide panorama",
+                "prompt": "medieval castle hilltop sunset, stone walls, towers, flags",
                 "negative": "people, person, human, character, figure, face, body"
             },
             "forest": {
-                "prompt": "masterpiece, high quality, detailed, ancient enchanted forest, massive oak trees, mystical fog filtering sunlight, moss-covered stones, magical atmosphere, fantasy woodland, cinematic wide forest scene",
+                "prompt": "enchanted forest, massive oak trees, mystical fog, sunlight",
                 "negative": "people, person, human, character, figure, face, body"
             }
         }
@@ -1581,11 +1585,11 @@ class AssetGenerator:
             Dicionário com paths dos sprites transparentes gerados
         """
         transparent_sprite_prompts = {
-            "knight_transparent": "full body medieval knight standing pose, golden ornate armor with intricate engravings, heroic stance holding sword, noble proportions, fantasy character art, high detail, transparent background, no background, isolated character, white background removal",
+            "knight_transparent": "medieval knight standing, golden armor, sword, heroic stance",
             
-            "wizard_transparent": "full body arcane wizard standing pose, flowing blue and purple mystical robes with magical symbols, wise elderly appearance with long beard, staff with glowing crystal orb, magical aura particles, fantasy character art, high detail, transparent background, no background, isolated character, white background removal",
+            "wizard_transparent": "arcane wizard standing, blue robes, staff, glowing crystal",
             
-            "assassin_transparent": "full body shadow assassin standing pose, dark leather armor and hooded cloak, mysterious figure with twin daggers, agile athletic build, stealth pose, fantasy character art, high detail, transparent background, no background, isolated character, white background removal"
+            "assassin_transparent": "shadow assassin standing, leather armor, hooded cloak, daggers"
         }
         
         if not self.sdxl_pipeline:

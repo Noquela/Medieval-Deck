@@ -41,6 +41,7 @@ class UIState(Enum):
     CHARACTER_DETAIL = "character_detail"  # Nova tela individual de personagem
     GAME = "game"
     COMBAT = "combat"
+    MVP_COMBAT = "mvp_combat"  # Demo MVP Combat
     DECK_BUILDER = "deck_builder"
     STATS = "stats"
     STORY = "story"
@@ -221,6 +222,8 @@ class GameUI:
             
         if action == "new_game":
             self._start_new_game()
+        elif action == "mvp_combat":
+            self._start_mvp_combat()
         elif action == "combat_test":
             self._start_combat_test()
         elif action == "deck_builder":
@@ -355,6 +358,46 @@ class GameUI:
         logger.info("Starting new game...")
         self._transition_to_state(UIState.CHARACTER_SELECTION)  # Use the original character selection with backgrounds
         
+    def _start_mvp_combat(self) -> None:
+        """Start MVP Combat demo."""
+        logger.info("Starting MVP Combat demo...")
+        try:
+            # Import MVP Combat Demo
+            import sys
+            from pathlib import Path
+            
+            # Add project root to path
+            project_root = Path(__file__).parent.parent.parent
+            if str(project_root) not in sys.path:
+                sys.path.insert(0, str(project_root))
+            
+            from demo_mvp_combat import MVPCombatDemo
+            
+            # Create MVP Combat demo instance
+            # Pass our existing screen to reuse it
+            self.mvp_combat_demo = MVPCombatDemo()
+            # Override the demo's screen with our main screen
+            self.mvp_combat_demo.screen = self.screen
+            self.mvp_combat_demo.screen_width = self.screen.get_width()
+            self.mvp_combat_demo.screen_height = self.screen.get_height()
+            
+            # Update zones for our screen size
+            self.mvp_combat_demo.zones = {
+                "enemy": pygame.Rect(0, 0, self.mvp_combat_demo.screen_width, int(self.mvp_combat_demo.screen_height * 0.25)),
+                "hand": pygame.Rect(0, int(self.mvp_combat_demo.screen_height * 0.8), self.mvp_combat_demo.screen_width, int(self.mvp_combat_demo.screen_height * 0.2)),
+                "status_hud": pygame.Rect(self.mvp_combat_demo.screen_width - 280, 20, 260, 120),
+                "player": pygame.Rect(int(self.mvp_combat_demo.screen_width * 0.1), int(self.mvp_combat_demo.screen_height * 0.4), 
+                                    int(self.mvp_combat_demo.screen_width * 0.3), int(self.mvp_combat_demo.screen_height * 0.4))
+            }
+            
+            logger.info("MVP Combat demo initialized successfully")
+            self._transition_to_state(UIState.MVP_COMBAT)
+            
+        except Exception as e:
+            logger.error(f"Failed to start MVP Combat demo: {e}")
+            logger.error("Falling back to menu")
+            self._transition_to_state(UIState.MENU)
+        
     def _start_combat_test(self) -> None:
         """Start combat test directly with default character."""
         logger.info("Starting combat test...")
@@ -459,6 +502,12 @@ class GameUI:
             current_screen = self.screens.get(self.current_state)
             if current_screen and hasattr(current_screen, 'update'):
                 current_screen.update(dt)
+        elif self.current_state == UIState.MVP_COMBAT:
+            # Update MVP combat
+            if hasattr(self, 'mvp_combat_demo') and self.mvp_combat_demo:
+                if not self.mvp_combat_demo.handle_events():
+                    # MVP Combat quer sair, voltar ao menu
+                    self._transition_to_state(UIState.MENU)
             
     def draw(self) -> None:
         """Draw current screen."""
@@ -476,6 +525,10 @@ class GameUI:
             current_screen = self.screens.get(self.current_state)
             if current_screen and hasattr(current_screen, 'draw'):
                 current_screen.draw()
+            elif self.current_state == UIState.MVP_COMBAT:
+                # Draw MVP combat
+                if hasattr(self, 'mvp_combat_demo') and self.mvp_combat_demo:
+                    self.mvp_combat_demo.render()
             else:
                 # Fallback: draw placeholder
                 self._draw_placeholder()

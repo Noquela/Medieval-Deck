@@ -181,6 +181,18 @@ Examples:
         help="Run Combat UI demo (Fase 4 implementation)"
     )
     
+    parser.add_argument(
+        "--generate-mvp-assets",
+        action="store_true",
+        help="Generate MVP assets (2 biomes, 3 characters, UI elements)"
+    )
+    
+    parser.add_argument(
+        "--demo-mvp-combat",
+        action="store_true",
+        help="Run MVP Combat demo with AI-generated backgrounds"
+    )
+    
     return parser
 
 
@@ -686,6 +698,34 @@ def main():
                 return 0 if result else 1
             except ImportError as e:
                 logging.error(f"Failed to import Combat UI demo: {e}")
+                return 1
+        
+        # Se for gerar assets do MVP
+        if args.generate_mvp_assets:
+            logging.info("Running MVP asset generation...")
+            try:
+                import subprocess
+                result = subprocess.run([sys.executable, "scripts/generate_mvp_assets.py"], 
+                                      capture_output=True, text=True)
+                print(result.stdout)
+                if result.stderr:
+                    print("Errors:", result.stderr)
+                logging.info("MVP asset generation completed.")
+                return result.returncode
+            except Exception as e:
+                logging.error(f"Failed to run MVP asset generation: {e}")
+                return 1
+        
+        # Se for executar demo MVP de combate
+        if args.demo_mvp_combat:
+            logging.info("Running MVP Combat demo...")
+            try:
+                from demo_mvp_combat import main as demo_mvp_combat_main
+                result = demo_mvp_combat_main()
+                logging.info("MVP Combat demo completed.")
+                return 0 if result else 1
+            except ImportError as e:
+                logging.error(f"Failed to import MVP Combat demo: {e}")
                 return 1
             
         # Initialize game engine
