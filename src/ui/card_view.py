@@ -136,8 +136,8 @@ class CardView:
         
         return surface
     
-    def draw(self, screen: pygame.Surface):
-        """Desenha a carta na tela."""
+    def draw(self, screen: pygame.Surface, hover: bool = False):
+        """Desenha a carta na tela com efeito de hover."""
         if self._needs_redraw or self._card_surface is None:
             self._card_surface = self._create_card_surface()
             self._needs_redraw = False
@@ -146,6 +146,13 @@ class CardView:
         card_rect = self._card_surface.get_rect()
         card_rect.centerx = self.current_position[0]
         card_rect.bottom = self.current_position[1]
+        
+        # Glow pulsante em hover
+        if hover:
+            glow = pygame.Surface(self._card_surface.get_size(), pygame.SRCALPHA)
+            alpha = int((math.sin(pygame.time.get_ticks() * 0.02) + 1) * 60)
+            glow.fill((212, 180, 106, alpha))
+            screen.blit(glow, card_rect.topleft, special_flags=pygame.BLEND_RGBA_ADD)
         
         # Glow de seleção
         if self.glow_alpha > 0:
