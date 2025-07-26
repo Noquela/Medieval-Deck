@@ -12,10 +12,10 @@ import json
 from datetime import datetime
 import PIL.Image
 
-from ..models.sdxl_pipeline import SDXLPipeline
-from ..models.card_models import Card, CardType, Rarity
-from .prompt_optimizer import PromptOptimizer
-from ..utils.config import Config
+from models.sdxl_pipeline import SDXLPipeline
+from models.card_models import Card, CardType, Rarity
+from generators.prompt_optimizer import PromptOptimizer
+from utils.config import Config
 
 logger = logging.getLogger(__name__)
 

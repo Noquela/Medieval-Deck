@@ -1,7 +1,11 @@
 """
-MVP Combat Screen - Sistema de combate integrado ao jogo principal
+MVP Combat Screen - Layout Definitivo Stage-Action
 
-Usa os sistemas MVP mas integrado ao fluxo normal do jogo.
+Sistema de combate com:
+- Cenário corredor widescreen (BG gerado por IA)
+- Sprites (herói + inimigos) alinhados na linha do chão
+- Mão de cartas em faixa baixa (≤18% da altura)
+- HUD discreto nos cantos
 """
 
 import pygame
@@ -14,11 +18,52 @@ from collections import deque
 
 from ..utils.config import Config
 from ..utils.asset_loader import get_asset
+from ..utils.theme import Theme
 from ..gameplay.mvp_cards import Card, CardType, Hand
 from ..gameplay.mvp_deck import MVPDeck
 from ..core.mvp_turn_engine import MVPTurnEngine, MVPPlayer, MVPEnemy
 
 logger = logging.getLogger(__name__)
+
+
+class FrameAnimation:
+    """Sistema de animação por frames."""
+    
+    def __init__(self, frames: List[pygame.Surface], fps: int = 30, loop: bool = True):
+        self.frames = frames
+        self.fps = fps
+        self.loop = loop
+        self.current_frame = 0
+        self.time_per_frame = 1000.0 / fps  # milliseconds
+        self.last_update = 0
+        self.done = False
+    
+    def update(self, dt: float):
+        """Atualiza a animação."""
+        current_time = pygame.time.get_ticks()
+        
+        if current_time - self.last_update >= self.time_per_frame:
+            self.current_frame += 1
+            self.last_update = current_time
+            
+            if self.current_frame >= len(self.frames):
+                if self.loop:
+                    self.current_frame = 0
+                else:
+                    self.current_frame = len(self.frames) - 1
+                    self.done = True
+    
+    def current(self) -> pygame.Surface:
+        """Retorna o frame atual."""
+        if not self.frames:
+            return pygame.Surface((64, 64), pygame.SRCALPHA)
+        return self.frames[self.current_frame]
+    
+    def reset(self):
+        """Reseta a animação."""
+        self.current_frame = 0
+        self.done = False
+        self.last_update = pygame.time.get_ticks()
 
 
 class Camera:
@@ -52,55 +97,191 @@ class Camera:
 
 class MVPCombatScreen:
     """
-    Tela de combate MVP integrada ao jogo principal.
+    Tela de combate MVP - Layout Definitivo Stage-Action.
     
-    Usa os sistemas MVP testados mas dentro do fluxo normal do jogo.
+    Layout:
+    - Background: Corredor medieval widescreen
+    - Sprites: Herói e inimigos na linha do chão (55% da altura)
+    - Cartas: Faixa inferior (18% da altura) com pergaminhos IA
+    - HUD: Cantos discretos
     """
     
     def __init__(self, screen: pygame.Surface, config: Config, character_id: str = "knight"):
-        """
-        Initialize MVP combat screen.
-        
-        Args:
-            screen: Pygame screen surface
-            config: Configuration object
-            character_id: Selected character (knight, wizard, assassin)
-        """
+        """Initialize MVP combat screen with definitive layout."""
         self.screen = screen
         self.config = config
         self.character_id = character_id
         
         # Screen dimensions
-        self.width = screen.get_width()
-        self.height = screen.get_height()
+        self.screen_w = screen.get_width()
+        self.screen_h = screen.get_height()
         
-        # Theme colors and fonts
-        pygame.font.init()
-        self.colors = {
-            "background": (25, 20, 15),
-            "text_light": (245, 240, 230),
-            "border": (100, 100, 100),
-            "card_bg": (60, 50, 40),
-            "accent": (212, 180, 106),
-            "hp_red": (220, 68, 58),
-            "mana_blue": (39, 131, 221),
-            "selected": (255, 215, 0)  # Golden
+        # Initialize Theme
+        Theme.init_fonts()
+        
+        # Create layer surfaces for proper draw order management
+        self.layer_bg = pygame.Surface((self.screen_w, self.screen_h)).convert()
+        self.layer_mid = pygame.Surface((self.screen_w, self.screen_h), pygame.SRCALPHA)
+        self.layer_ui = pygame.Surface((self.screen_w, self.screen_h), pygame.SRCALPHA)
+        
+        # Layout zones using Theme
+        self.zones = Theme.create_zones((self.screen_w, self.screen_h))
+        self.ground_y = Theme.get_ground_y(self.screen_h)
+        
+        # Load background
+        self.bg_corridor = self._load_background("combat_corridor")
+        
+        # Load and setup animations
+        self._setup_animations()
+        
+        # Load intent icons
+        self.intent_icons = self._load_intent_icons()
+        
+        # Game state
+        self.biomes = {
+            "cathedral": {
+                "name": "Sacred Cathedral",
+                "enemy_type": "Knight Guardian",
+                "background": None  # Will be loaded
+            },
+            "goblin_cave": {
+                "name": "Goblin Cave", 
+                "enemy_type": "Goblin Scout",
+                "background": None  # Will be loaded
+            }
         }
         
-        self.fonts = {
-            "large": pygame.font.Font(None, 48),    # Era 36 -> Aumentado para 4K
-            "medium": pygame.font.Font(None, 32),   # Era 24 -> Aumentado para 4K
-            "small": pygame.font.Font(None, 24)     # Era 18 -> Aumentado para 4K
-        }
+        # Load biome backgrounds
+        self._load_biome_backgrounds()
         
-        # Create layout zones
-        self.zones = {
-            "enemy": pygame.Rect(0, 0, self.width, int(self.height * 0.25)),
-            "hand": pygame.Rect(0, int(self.height * 0.8), self.width, int(self.height * 0.2)),
-            "status_hud": pygame.Rect(self.width - 280, 20, 260, 120),
-            "player": pygame.Rect(int(self.width * 0.1), int(self.height * 0.4), 
-                                int(self.width * 0.3), int(self.height * 0.4))
-        }
+        self.current_biome = "cathedral"
+        self.selected_card_index = 0
+        
+        # Initialize game systems
+        self.deck = MVPDeck()
+        self.hand = Hand()
+        
+        # Create player and enemy
+        self.player = self._create_player_for_character(character_id)
+        self.enemy = self._create_enemy_for_biome(self.current_biome)
+        self.turn_engine = MVPTurnEngine(self.player, self.enemy)
+        
+        # Combat state
+        self.game_over = False
+        self.victory = False
+        
+        # Animation state
+        self.card_animation = None
+        self.float_numbers = []
+        self.player_anim_state = "idle"
+        self.player_anim_timer = 0
+        
+        # Start combat
+        self._start_combat()
+        
+        logger.info(f"MVP Combat Screen initialized - Layout definitivo para {character_id}")
+    
+    def _setup_animations(self):
+        """Setup sprite animations."""
+        # Load sprite sheets or fallback to static sprites
+        try:
+            # Try to load sprite sheets
+            knight_idle_frames = self._load_sprite_sheet("sheets/knight_idle.png", 10)
+            knight_attack_frames = self._load_sprite_sheet("sheets/knight_attack.png", 10)
+            goblin_idle_frames = self._load_sprite_sheet("sheets/goblin_idle.png", 10)
+            goblin_attack_frames = self._load_sprite_sheet("sheets/goblin_attack.png", 10)
+            
+            # Create animations
+            self.player_idle = FrameAnimation(knight_idle_frames, fps=30, loop=True)
+            self.player_attack = FrameAnimation(knight_attack_frames, fps=30, loop=False)
+            self.goblin_idle = FrameAnimation(goblin_idle_frames, fps=30, loop=True)
+            self.goblin_attack = FrameAnimation(goblin_attack_frames, fps=30, loop=False)
+            
+            # Set current animation
+            self.player_anim = self.player_idle
+            self.enemy_anim = self.goblin_idle
+            
+        except Exception as e:
+            logger.warning(f"Could not load sprite sheets, using static sprites: {e}")
+            # Fallback to static sprites
+            self._setup_static_sprites()
+    
+    def _load_sprite_sheet(self, path: str, frame_count: int) -> List[pygame.Surface]:
+        """Load sprite sheet and split into frames."""
+        try:
+            full_path = Path("assets") / path
+            if full_path.exists():
+                return Theme.load_sprite_sheet(str(full_path), frame_count)
+            else:
+                raise FileNotFoundError(f"Sprite sheet not found: {full_path}")
+        except Exception as e:
+            logger.warning(f"Failed to load sprite sheet {path}: {e}")
+            # Return placeholder frames
+            return [pygame.Surface((128, 128), pygame.SRCALPHA) for _ in range(frame_count)]
+    
+    def _setup_static_sprites(self):
+        """Setup static sprite fallbacks."""
+        # Load static sprites from generated assets
+        knight_sprite = get_asset("knight_sprite_enhanced") or get_asset("knight_sprite")
+        goblin_sprite = get_asset("goblin_sprite_enhanced") or get_asset("goblin_scout_sprite")
+        
+        if not knight_sprite:
+            knight_sprite = pygame.Surface((128, 128), pygame.SRCALPHA)
+            knight_sprite.fill(Theme.get_color("gold"))
+        
+        if not goblin_sprite:
+            goblin_sprite = pygame.Surface((96, 96), pygame.SRCALPHA)
+            goblin_sprite.fill(Theme.get_color("hp"))
+        
+        # Create single-frame animations
+        self.player_idle = FrameAnimation([knight_sprite], fps=1, loop=True)
+        self.player_attack = FrameAnimation([knight_sprite], fps=1, loop=False)
+        self.goblin_idle = FrameAnimation([goblin_sprite], fps=1, loop=True)
+        self.goblin_attack = FrameAnimation([goblin_sprite], fps=1, loop=False)
+        
+        self.player_anim = self.player_idle
+        self.enemy_anim = self.goblin_idle
+    
+    def _load_intent_icons(self) -> Dict[str, pygame.Surface]:
+        """Load intent icons."""
+        icons = {}
+        
+        # Try to load generated icons
+        sword_icon = get_asset("icon_sword")
+        shield_icon = get_asset("icon_shield")
+        
+        if sword_icon:
+            icons["attack"] = sword_icon
+        else:
+            # Create placeholder
+            icon = pygame.Surface((32, 32), pygame.SRCALPHA)
+            pygame.draw.polygon(icon, Theme.get_color("hp"), [(16, 4), (28, 28), (4, 28)])
+            icons["attack"] = icon
+        
+        if shield_icon:
+            icons["block"] = shield_icon
+        else:
+            # Create placeholder
+            icon = pygame.Surface((32, 32), pygame.SRCALPHA)
+            pygame.draw.ellipse(icon, Theme.get_color("mana"), (4, 4, 24, 24))
+            icons["block"] = icon
+        
+        return icons
+    
+    def _create_simple_fallback_background(self) -> pygame.Surface:
+        """Create simple gradient fallback background for old method."""
+        bg = pygame.Surface((self.screen_w, self.screen_h))
+        
+        # Simple gradient
+        for y in range(self.screen_h):
+            progress = y / self.screen_h
+            color_r = int(30 + progress * 20)
+            color_g = int(25 + progress * 15)
+            color_b = int(20 + progress * 10)
+            color = (color_r, color_g, color_b)
+            pygame.draw.line(bg, color, (0, y), (self.screen_w, y))
+        
+        return bg
         
         # Game state
         self.biomes = {
@@ -229,6 +410,13 @@ class MVPCombatScreen:
             # Look for generated backgrounds
             generated_dir = Path("assets/generated")
             
+            # First try direct file name
+            direct_path = generated_dir / f"{bg_name}.png"
+            if direct_path.exists():
+                logger.info(f"Loading background directly: {direct_path}")
+                bg_surface = pygame.image.load(direct_path)
+                return pygame.transform.scale(bg_surface, (self.screen_w, self.screen_h))
+            
             # Try different naming patterns
             patterns = [
                 f"{bg_name}_*.png",
@@ -239,22 +427,44 @@ class MVPCombatScreen:
                 bg_files = list(generated_dir.glob(pattern))
                 if bg_files:
                     bg_path = bg_files[0]  # Use first match
-                    logger.info(f"Loading background: {bg_path}")
+                    logger.info(f"Loading background pattern match: {bg_path}")
                     bg_surface = pygame.image.load(bg_path)
-                    return pygame.transform.scale(bg_surface, (self.width, self.height))
+                    return pygame.transform.scale(bg_surface, (self.screen_w, self.screen_h))
             
             logger.warning(f"Background not found for {bg_name}, using fallback")
-            return self._create_fallback_background()
+            return None
             
         except Exception as e:
             logger.error(f"Error loading background {bg_name}: {e}")
-            return self._create_fallback_background()
+            return None
     
     def _create_fallback_background(self) -> pygame.Surface:
-        """Create fallback background."""
-        bg = pygame.Surface((self.width, self.height))
-        bg.fill(self.colors["background"])
+        """Create fallback background with medieval theme."""
+        bg = pygame.Surface((self.screen_w, self.screen_h))
+        
+        # Create a dark medieval gradient background instead of plain color
+        # Dark stone blue to dark brown gradient
+        for y in range(self.screen_h):
+            progress = y / self.screen_h
+            # Interpolate between dark blue-gray (30, 35, 50) and dark brown (40, 25, 15)
+            r = int(30 + (40 - 30) * progress)
+            g = int(35 + (25 - 35) * progress) 
+            b = int(50 + (15 - 50) * progress)
+            color = (r, g, b)
+            pygame.draw.line(bg, color, (0, y), (self.screen_w, y))
+            
         return bg
+    
+    def _load_biome_backgrounds(self):
+        """Load backgrounds for each biome."""
+        # Try to load the corridor background we generated
+        corridor_bg = self._load_background("corridor_stage_definitive")
+        if not corridor_bg:
+            corridor_bg = self._create_fallback_background()
+        
+        # Use same background for all biomes for now
+        for biome_name in self.biomes:
+            self.biomes[biome_name]["background"] = corridor_bg
     
     def _start_combat(self) -> None:
         """Start a new combat."""
@@ -444,63 +654,537 @@ class MVPCombatScreen:
                 float_num["pos"][1] -= dt * 50  # Move up 50 pixels per second
     
     def draw(self) -> None:
-        """Draw the combat screen with layer management system."""
-        # Apply camera shake to all rendering
+        """Draw the combat screen with definitive stage-action layout."""
+        # Apply camera shake
         shake_offset = Camera.shake_offset
         
-        # Create layer surfaces for proper draw order
-        layer_bg = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
-        layer_mid = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
-        layer_ui = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
+        # Clear layers for new frame
+        self.layer_bg.fill(Theme.get_color("bg_combat"))
+        self.layer_mid.fill((0, 0, 0, 0))
+        self.layer_ui.fill((0, 0, 0, 0))
         
-        # === LAYER BG: Background and environment ===
-        current_bg = self.biomes[self.current_biome]["background"]
-        if current_bg:
-            layer_bg.blit(current_bg, (0, 0))
-        else:
-            layer_bg.fill(self.colors["background"])
+        # === LAYER BG: Background corridor ===
+        self._draw_background()
         
-        # === LAYER MID: Game entities (cards, enemies, particles) ===
-        # Enemy zone
-        self._render_enemy_zone_to_surface(layer_mid)
-        
-        # Player hand
-        self._render_hand_to_surface(layer_mid)
-        
-        # Render floating numbers
-        self._render_floating_numbers_to_surface(layer_mid)
+        # === LAYER MID: Sprites na linha do chão ===
+        self._draw_player_sprite()
+        self._draw_enemy_sprites()
+        self._draw_floating_numbers()
         
         # Render card animation
         if self.card_animation:
-            self._render_card_animation_to_surface(layer_mid)
+            self._draw_card_animation()
         
         # === LAYER UI: Interface elements ===
-        # Status HUD
-        self._render_status_hud_to_surface(layer_ui)
+        self._draw_hand_zone()
+        self._draw_status_hud()
         
         # === COMPOSITING: Blend layers with shake ===
-        # Create final surface
-        final_surface = pygame.Surface((self.width, self.height))
-        
-        # Composite layers in order
-        final_surface.blit(layer_bg, (0, 0))
-        final_surface.blit(layer_mid, (0, 0))  # Simple alpha blending
-        final_surface.blit(layer_ui, (0, 0))   # Simple alpha blending
-        
-        # Apply shake and blit to main screen
-        self.screen.blit(final_surface, shake_offset)
+        self.screen.blit(self.layer_bg, shake_offset)
+        self.screen.blit(self.layer_mid, shake_offset)
+        self.screen.blit(self.layer_ui, shake_offset)
         
         # Game over overlay (no shake, always on top)
         if self.game_over:
-            self._render_game_over()
+            self._draw_game_over()
     
-    def enter_screen(self) -> None:
-        """Called when screen becomes active."""
-        logger.info(f"Entering MVP Combat Screen with character: {self.character_id}")
+    def _draw_background(self):
+        """Draw corridor background to background layer."""
+        if self.bg_corridor:
+            self.layer_bg.blit(self.bg_corridor, (0, 0))
+        else:
+            self.layer_bg.fill(Theme.get_color("bg_combat"))
+    
+    def _draw_player_sprite(self):
+        """Draw player sprite aligned to ground line."""
+        if hasattr(self, 'player_anim') and self.player_anim:
+            frame = self.player_anim.current()
+            # Position sprite on ground line, centered horizontally
+            sprite_rect = frame.get_rect(midbottom=(self.screen_w // 2 - 200, self.ground_y))
+            self.layer_mid.blit(frame, sprite_rect)
+    
+    def _draw_enemy_sprites(self):
+        """Draw enemy sprites aligned to ground line."""
+        if hasattr(self, 'enemy_anim') and self.enemy_anim:
+            frame = self.enemy_anim.current()
+            # Position enemy on ground line, offset to the right
+            sprite_rect = frame.get_rect(midbottom=(self.screen_w // 2 + 200, self.ground_y))
+            self.layer_mid.blit(frame, sprite_rect)
         
-    def exit_screen(self) -> None:
-        """Called when screen becomes inactive."""
-        logger.info("Exiting MVP Combat Screen")
+        # Draw enemy info above sprite
+        self._draw_enemy_info()
+    
+    def _draw_enemy_info(self):
+        """Draw enemy HP and intent above sprite."""
+        enemy_center_x = self.screen_w // 2 + 200
+        info_y = self.ground_y - 200
+        
+        # Enemy name
+        name_text = Theme.FONT_SUBTITLE.render(self.enemy.name, True, Theme.get_color("gold"))
+        name_rect = name_text.get_rect(centerx=enemy_center_x, y=info_y)
+        self.layer_mid.blit(name_text, name_rect)
+        
+        # HP bar
+        hp_bar_width = 120
+        hp_bar_height = 12
+        hp_rect = pygame.Rect(enemy_center_x - hp_bar_width//2, info_y + 35, hp_bar_width, hp_bar_height)
+        
+        # HP bar background
+        pygame.draw.rect(self.layer_mid, (60, 20, 20), hp_rect)
+        
+        # HP bar fill
+        hp_ratio = self.enemy.current_hp / self.enemy.max_hp
+        fill_width = int(hp_bar_width * hp_ratio)
+        fill_rect = pygame.Rect(hp_rect.x, hp_rect.y, fill_width, hp_bar_height)
+        pygame.draw.rect(self.layer_mid, Theme.get_color("hp"), fill_rect)
+        
+        # HP text
+        hp_text = f"{self.enemy.current_hp}/{self.enemy.max_hp}"
+        hp_surf = Theme.FONT_SMALL.render(hp_text, True, Theme.get_color("text_light"))
+        hp_text_rect = hp_surf.get_rect(centerx=enemy_center_x, y=info_y + 55)
+        self.layer_mid.blit(hp_surf, hp_text_rect)
+        
+        # Intent
+        if hasattr(self.enemy, 'intent'):
+            intent_y = info_y + 80
+            intent_icon = self.intent_icons.get(self.enemy.intent)
+            
+            if intent_icon:
+                icon_rect = intent_icon.get_rect(centerx=enemy_center_x - 20, centery=intent_y)
+                self.layer_mid.blit(intent_icon, icon_rect)
+                
+                # Intent value
+                value_text = str(getattr(self.enemy, 'intent_value', '?'))
+                value_surf = Theme.FONT_BODY.render(value_text, True, Theme.get_color("text_light"))
+                value_rect = value_surf.get_rect(centerx=enemy_center_x + 20, centery=intent_y)
+                self.layer_mid.blit(value_surf, value_rect)
+    
+    def _draw_hand_zone(self):
+        """Draw hand zone to UI layer - definitive card layout."""
+        hand_zone = self.zones["hand"]
+        
+        # CORREÇÃO CRÍTICA: Verificar se há cartas antes de processar
+        if not self.hand.cards:
+            # Mensagem discreta no rodapé
+            no_cards_text = "No cards in hand - Press ENTER to draw"
+            text_surf = Theme.FONT_SMALL.render(no_cards_text, True, Theme.get_color("gold"))
+            text_rect = text_surf.get_rect(centerx=self.screen_w//2, y=hand_zone.centery)
+            self.layer_ui.blit(text_surf, text_rect)
+            return
+        
+        # Get mouse position for hover detection
+        mouse_pos = pygame.mouse.get_pos()
+        
+        # Use Theme constants for consistency
+        card_w, card_h = Theme.CARD_SIZE
+        spacing = Theme.CARD_GAP
+        
+        # Calculate positions - centralized in hand zone
+        total_width = len(self.hand.cards) * card_w + (len(self.hand.cards) - 1) * spacing
+        start_x = (self.screen_w - total_width) // 2
+        card_y = hand_zone.y + (hand_zone.height - card_h) // 2
+        
+        for i, card in enumerate(self.hand.cards):
+            x = start_x + i * (card_w + spacing)
+            card_rect = pygame.Rect(x, card_y, card_w, card_h)
+            
+            # Check hover
+            hover = card_rect.collidepoint(mouse_pos)
+            selected = (i == self.selected_card_index)
+            
+            # Draw card using proper scaling
+            self._draw_single_card(card_rect, card, hover, selected)
+    
+    def _draw_single_card(self, rect: pygame.Rect, card: Card, hover: bool, selected: bool):
+        """Draw a single card with proper pergaminho frame scaling."""
+        
+        # Load card frame
+        card_frame = get_asset("card_frame")
+        if not card_frame:
+            # Try UI directory
+            try:
+                card_frame = pygame.image.load("assets/ui/card_frame.png").convert_alpha()
+            except:
+                # Create simple frame
+                card_frame = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
+                card_frame.fill((139, 69, 19, 200))
+                pygame.draw.rect(card_frame, (101, 67, 33), card_frame.get_rect(), 3)
+        
+        # CORREÇÃO CRÍTICA: Scale frame to exact card size
+        scaled_frame = pygame.transform.smoothscale(card_frame, (rect.width, rect.height))
+        
+        # Hover glow effect
+        if hover:
+            glow_size = 8
+            glow = pygame.Surface((rect.width + glow_size * 2, rect.height + glow_size * 2), pygame.SRCALPHA)
+            alpha = int((math.sin(pygame.time.get_ticks() * 0.015) + 1) * 60)
+            glow.fill((*Theme.get_color("glow_gold"), alpha))
+            glow_rect = glow.get_rect(center=rect.center)
+            self.layer_ui.blit(glow, glow_rect, special_flags=pygame.BLEND_ADD)
+        
+        # Draw frame
+        self.layer_ui.blit(scaled_frame, rect)
+        
+        # Selection highlight
+        if selected:
+            highlight = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
+            highlight.fill((*Theme.get_color("gold"), 80))
+            self.layer_ui.blit(highlight, rect)
+        
+        # Card border
+        border_color = Theme.get_color("gold") if selected else Theme.get_color("ui_border")
+        border_width = 3 if selected else 2
+        pygame.draw.rect(self.layer_ui, border_color, rect, border_width)
+        
+        # Card text content
+        self._draw_card_text(rect, card)
+    
+    def _draw_card_text(self, rect: pygame.Rect, card: Card):
+        """Draw card text content."""
+        # Card name
+        name_surf = Theme.FONT_SMALL.render(card.name, True, Theme.get_color("text_light"))
+        name_rect = name_surf.get_rect(centerx=rect.centerx, y=rect.y + 15)
+        self.layer_ui.blit(name_surf, name_rect)
+        
+        # Mana cost
+        cost_text = f"⚡{card.mana_cost}"
+        cost_color = Theme.get_color("mana") if self.player.current_mana >= card.mana_cost else (150, 50, 50)
+        cost_surf = Theme.FONT_SMALL.render(cost_text, True, cost_color)
+        cost_rect = cost_surf.get_rect(x=rect.x + 10, y=rect.y + 35)
+        self.layer_ui.blit(cost_surf, cost_rect)
+        
+        # Card effects
+        effects_y = rect.y + 55
+        
+        if card.damage > 0:
+            dmg_text = f"⚔{card.damage}"
+            dmg_surf = Theme.FONT_SMALL.render(dmg_text, True, Theme.get_color("hp"))
+            dmg_rect = dmg_surf.get_rect(x=rect.x + 10, y=effects_y)
+            self.layer_ui.blit(dmg_surf, dmg_rect)
+        
+        if card.block > 0:
+            block_text = f"🛡{card.block}"
+            block_surf = Theme.FONT_SMALL.render(block_text, True, Theme.get_color("mana"))
+            block_rect = block_surf.get_rect(x=rect.x + 60, y=effects_y)
+            self.layer_ui.blit(block_surf, block_rect)
+        
+        if card.heal > 0:
+            heal_text = f"❤{card.heal}"
+            heal_surf = Theme.FONT_SMALL.render(heal_text, True, (100, 255, 100))
+            heal_rect = heal_surf.get_rect(x=rect.x + 110, y=effects_y)
+            self.layer_ui.blit(heal_surf, heal_rect)
+    
+    def _draw_status_hud(self):
+        """Draw status HUD to UI layer - discrete corners."""
+        # Player status - top left corner
+        hud_rect = pygame.Rect(10, 10, 200, 80)
+        
+        # HUD background
+        hud_bg = pygame.Surface((hud_rect.width, hud_rect.height), pygame.SRCALPHA)
+        hud_bg.fill((*Theme.get_color("ui_bg"), 180))
+        self.layer_ui.blit(hud_bg, hud_rect)
+        pygame.draw.rect(self.layer_ui, Theme.get_color("ui_border"), hud_rect, 2)
+        
+        # Player HP
+        hp_text = f"HP: {self.player.current_hp}/{self.player.max_hp}"
+        hp_surf = Theme.FONT_BODY.render(hp_text, True, Theme.get_color("text_light"))
+        hp_rect = hp_surf.get_rect(x=hud_rect.x + 10, y=hud_rect.y + 10)
+        self.layer_ui.blit(hp_surf, hp_rect)
+        
+        # Player Mana
+        mana_text = f"Energy: {self.player.current_mana}/{self.player.max_mana}"
+        mana_surf = Theme.FONT_BODY.render(mana_text, True, Theme.get_color("text_light"))
+        mana_rect = mana_surf.get_rect(x=hud_rect.x + 10, y=hud_rect.y + 35)
+        self.layer_ui.blit(mana_surf, mana_rect)
+        
+        # Block value
+        if self.player.block > 0:
+            block_text = f"Block: {self.player.block}"
+            block_surf = Theme.FONT_SMALL.render(block_text, True, Theme.get_color("mana"))
+            block_rect = block_surf.get_rect(x=hud_rect.x + 10, y=hud_rect.y + 60)
+            self.layer_ui.blit(block_surf, block_rect)
+    
+    def update(self, dt: float) -> None:
+        """Update combat screen with definitive animations."""
+        current_time = pygame.time.get_ticks()
+        
+        # Update camera shake
+        Camera.update()
+        
+        # Update sprite animations
+        if hasattr(self, 'player_anim') and self.player_anim:
+            self.player_anim.update(dt)
+        
+        if hasattr(self, 'enemy_anim') and self.enemy_anim:
+            self.enemy_anim.update(dt)
+        
+        # Reset player to idle after attack animation
+        if (self.player_anim_state == "attack" and 
+            hasattr(self, 'player_attack') and 
+            self.player_anim is self.player_attack and 
+            self.player_attack.done):
+            self.player_anim = self.player_idle
+            self.player_anim_state = "idle"
+            self.player_idle.reset()
+        
+        # Update card animation
+        if self.card_animation:
+            elapsed = current_time - self.card_animation["start_time"]
+            if elapsed >= self.card_animation["duration"]:
+                # Trigger attack animation
+                if hasattr(self, 'player_attack'):
+                    self.player_anim = self.player_attack
+                    self.player_anim_state = "attack"
+                    self.player_attack.reset()
+                
+                # Clear card animation
+                self.card_animation = None
+        
+        # Update floating numbers
+        for float_num in self.float_numbers[:]:
+            elapsed = current_time - float_num["start_time"]
+            if elapsed >= float_num["duration"]:
+                self.float_numbers.remove(float_num)
+            else:
+                # Move number up
+                float_num["pos"][1] -= dt * 50
+    
+    def _draw_floating_numbers(self):
+        """Draw floating damage/heal numbers."""
+        for float_num in self.float_numbers:
+            text_surf = Theme.FONT_BODY.render(float_num["text"], True, float_num["color"])
+            self.layer_mid.blit(text_surf, float_num["pos"])
+    
+    def _draw_card_animation(self):
+        """Draw card animation in center."""
+        if not self.card_animation:
+            return
+        
+        card = self.card_animation["card"]
+        center_pos = (self.screen_w // 2, self.screen_h // 2)
+        
+        # Create animated card surface
+        card_surface = pygame.Surface(Theme.CARD_SIZE, pygame.SRCALPHA)
+        card_surface.fill((139, 69, 19, 200))
+        
+        # Card name
+        name_surf = Theme.FONT_SUBTITLE.render(card.name, True, Theme.get_color("text_light"))
+        name_rect = name_surf.get_rect(centerx=Theme.CARD_SIZE[0]//2, y=20)
+        card_surface.blit(name_surf, name_rect)
+        
+        # Position in center
+        card_rect = card_surface.get_rect(center=center_pos)
+        self.layer_mid.blit(card_surface, card_rect)
+    
+    def _draw_game_over(self):
+        """Draw game over overlay."""
+        overlay = pygame.Surface((self.screen_w, self.screen_h), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 150))
+        self.screen.blit(overlay, (0, 0))
+        
+        # Game over text
+        if self.victory:
+            text = "VICTORY!"
+            color = Theme.get_color("gold")
+        else:
+            text = "DEFEAT!"
+            color = Theme.get_color("hp")
+        
+        text_surf = Theme.FONT_TITLE.render(text, True, color)
+        text_rect = text_surf.get_rect(center=(self.screen_w//2, self.screen_h//2))
+        self.screen.blit(text_surf, text_rect)
+        
+        # Restart instruction
+        restart_text = "Press ENTER to restart"
+        restart_surf = Theme.FONT_BODY.render(restart_text, True, Theme.get_color("text_light"))
+        restart_rect = restart_surf.get_rect(center=(self.screen_w//2, self.screen_h//2 + 60))
+        self.screen.blit(restart_surf, restart_rect)    # === NEW LAYER-BASED DRAWING METHODS ===
+    def _draw_background(self) -> None:
+        """Draw background to background layer."""
+        current_bg = self.biomes[self.current_biome]["background"]
+        if current_bg:
+            self.layer_bg.blit(current_bg, (0, 0))
+        else:
+            self.layer_bg.fill(Theme.get_color("background"))
+    
+    def _draw_enemy_zone(self) -> None:
+        """Draw enemy zone to mid layer."""
+        self._render_enemy_zone_to_surface(self.layer_mid)
+    
+    def _draw_hand_zone(self) -> None:
+        """Draw hand zone to UI layer."""
+        hand_zone = self.zones["hand"]
+        
+        # CORREÇÃO: Verificar se há cartas antes de processar
+        if not self.hand.cards:
+            no_cards_text = "No cards in hand"
+            self.draw_text_outline_to_surface(
+                self.layer_ui,
+                no_cards_text,
+                (hand_zone.centerx, hand_zone.bottom - 10),
+                Theme.FONT_BODY,
+                (255, 215, 0),  # Gold text
+                outline_color=(0, 0, 0),
+                outline_width=2
+            )
+            return
+        
+        # Get mouse position for hover detection
+        mouse_pos = pygame.mouse.get_pos()
+        
+        # CORREÇÃO: Usar Theme.CARD_SIZE para consistência
+        card_width, card_height = 140, 90  # Tamanhos específicos para hand zone
+        spacing = 12
+        total_width = len(self.hand.cards) * card_width + (len(self.hand.cards) - 1) * spacing
+        start_x = hand_zone.centerx - total_width // 2
+        
+        for i, card in enumerate(self.hand.cards):
+            x = start_x + i * (card_width + spacing)
+            y = hand_zone.y + (hand_zone.height - card_height) // 2
+            
+            # Card rect
+            card_rect = pygame.Rect(x, y, card_width, card_height)
+            
+            # Check hover
+            hover = card_rect.collidepoint(mouse_pos)
+            
+            # CORREÇÃO: Usar CardView.draw com tamanho específico
+            if hasattr(self, 'card_view'):
+                self.card_view.draw(
+                    self.layer_ui, 
+                    pos=(card_rect.centerx, card_rect.centery), 
+                    size=(card_width, card_height), 
+                    hover=hover
+                )
+            else:
+                # Fallback rendering
+                self._draw_card_fallback(card_rect, card, hover, i == self.selected_card_index)
+    
+    def _draw_card_fallback(self, card_rect, card, hover, selected):
+        """Fallback card drawing when CardView is not available."""
+        # Get card background texture based on type
+        card_bg_texture = None
+        card_type = card.card_type.value.lower() if hasattr(card, 'card_type') else 'default'
+        
+        # Try to get specific card background from generated assets
+        possible_backgrounds = [
+            f"{card_type}_card_bg",
+            f"card_bg_{card_type}",
+            "scroll_parchment",
+            "frame_ornate"
+        ]
+        
+        for bg_name in possible_backgrounds:
+            card_bg_texture = get_asset(bg_name)
+            if card_bg_texture:
+                break
+        
+        # Enhanced hover glow effect
+        if hover:
+            glow_size = 15
+            glow = pygame.Surface((card_rect.width + glow_size * 2, card_rect.height + glow_size * 2), pygame.SRCALPHA)
+            alpha = int((math.sin(pygame.time.get_ticks() * 0.015) + 1) * 80)
+            glow_color = (255, 215, 0, alpha)  # Golden glow
+            
+            # Create glow gradient
+            center = (glow.get_width() // 2, glow.get_height() // 2)
+            for radius in range(glow_size, 0, -1):
+                current_alpha = int(alpha * (1 - radius / glow_size))
+                color_with_alpha = (*glow_color[:3], current_alpha)
+                pygame.draw.ellipse(glow, color_with_alpha, 
+                                  (center[0] - radius, center[1] - radius//2, 
+                                   radius * 2, radius))
+            
+            glow_rect = glow.get_rect(center=card_rect.center)
+            self.layer_ui.blit(glow, glow_rect.topleft, special_flags=pygame.BLEND_ADD)
+        
+        # Draw card background
+        if card_bg_texture:
+            # CORREÇÃO CRÍTICA: Scale texture to card size para evitar frames gigantes
+            scaled_texture = pygame.transform.smoothscale(card_bg_texture, (card_rect.width, card_rect.height))
+            self.layer_ui.blit(scaled_texture, card_rect)
+            
+            # Add selection highlight
+            if selected:
+                highlight = pygame.Surface((card_rect.width, card_rect.height), pygame.SRCALPHA)
+                highlight.fill((255, 215, 0, 60))  # Golden highlight
+                self.layer_ui.blit(highlight, card_rect)
+        else:
+            # Fallback: gradient background
+            if selected:
+                color1, color2 = (100, 80, 40), (80, 60, 30)  # Selected colors
+            else:
+                color1, color2 = (70, 55, 35), (50, 40, 25)   # Normal colors
+            
+            self._draw_gradient_rect(self.layer_ui, card_rect, color1, color2)
+        
+        # Card border
+        border_color = (255, 215, 0) if selected else (120, 90, 60)
+        border_width = 3 if selected else 2
+        pygame.draw.rect(self.layer_ui, border_color, card_rect, border_width)
+        
+        # Card name
+        self.draw_text_outline_to_surface(
+            self.layer_ui,
+            card.name,
+            (card_rect.centerx, card_rect.y + 15),
+            Theme.FONT_SMALL,
+            Theme.get_color("text_light")
+        )
+        
+        # Card cost
+        cost_text = f"⚡{card.mana_cost}"
+        cost_color = Theme.get_color("mana_blue") if self.player.current_mana >= card.mana_cost else (150, 50, 50)
+        self.draw_text_outline_to_surface(
+            self.layer_ui,
+            cost_text,
+            (card_rect.x + 15, card_rect.y + 35),
+            Theme.FONT_SMALL,
+            cost_color
+        )
+        
+        # Card effect
+        if card.damage > 0:
+            dmg_text = f"⚔{card.damage}"
+            self.draw_text_outline_to_surface(
+                self.layer_ui,
+                dmg_text,
+                (card_rect.x + 15, card_rect.y + 50),
+                Theme.FONT_SMALL,
+                (255, 100, 100)
+            )
+        
+        if card.block > 0:
+            block_text = f"🛡{card.block}"
+            self.draw_text_outline_to_surface(
+                self.layer_ui,
+                block_text,
+                (card_rect.x + 60, card_rect.y + 50),
+                Theme.FONT_SMALL,
+                (100, 100, 255)
+            )
+        
+        if card.heal > 0:
+            heal_text = f"❤{card.heal}"
+            self.draw_text_outline_to_surface(
+                self.layer_ui,
+                heal_text,
+                (card_rect.x + 90, card_rect.y + 50),
+                Theme.FONT_SMALL,
+                (100, 255, 100)
+            )
+    
+    def _draw_status_hud(self) -> None:
+        """Draw status HUD to UI layer."""
+        self._render_status_hud_to_surface(self.layer_ui)
+    
+    def _draw_floating_numbers(self) -> None:
+        """Draw floating numbers to mid layer."""
+        self._render_floating_numbers_to_surface(self.layer_mid)
+    
+    def _draw_card_animation(self) -> None:
+        """Draw card animation to mid layer."""
+        self._render_card_animation_to_surface(self.layer_mid)
     
     # Surface-based rendering methods for camera shake support
     def _render_enemy_zone_to_surface(self, surface):
@@ -532,7 +1216,7 @@ class MVPCombatScreen:
             surface,
             enemy_name,
             (enemy_zone.centerx, title_y),
-            self.fonts["large"],
+            Theme.FONT_TITLE,
             (255, 215, 0),  # Gold text
             outline_color=(0, 0, 0),
             outline_width=2
@@ -562,7 +1246,7 @@ class MVPCombatScreen:
             surface,
             hp_text,
             (enemy_zone.centerx, enemy_zone.y + 105),
-            self.fonts["medium"],
+            Theme.FONT_SUBTITLE,
             (255, 255, 255),
             outline_color=(0, 0, 0),
             outline_width=1
@@ -590,7 +1274,7 @@ class MVPCombatScreen:
                     surface,
                     value_text,
                     (enemy_zone.centerx + 10, intent_y),
-                    self.fonts["medium"],
+                    Theme.FONT_SUBTITLE,
                     intent_color
                 )
             else:
@@ -601,158 +1285,16 @@ class MVPCombatScreen:
                     surface,
                     intent_text,
                     (enemy_zone.centerx, intent_y),
-                    self.fonts["medium"],
+                    Theme.FONT_SUBTITLE,
                     intent_color
                 )
     
     def _render_hand_to_surface(self, surface):
-        """Render hand to a surface with enhanced medieval cards."""
-        hand_zone = self.zones["hand"]
-        
-        if not self.hand.cards:
-            no_cards_text = "No cards in hand"
-            self.draw_text_outline_to_surface(
-                surface,
-                no_cards_text,
-                hand_zone.center,
-                self.fonts["medium"],
-                (255, 215, 0),  # Gold text
-                outline_color=(0, 0, 0),
-                outline_width=2
-            )
-            return
-        
-        # Get mouse position for hover detection
-        mouse_pos = pygame.mouse.get_pos()
-        
-        # Calculate card positions with proper scaling
-        card_width = 140  # Tamanho base da carta
-        card_height = 90
-        spacing = 12
-        total_width = len(self.hand.cards) * card_width + (len(self.hand.cards) - 1) * spacing
-        start_x = hand_zone.centerx - total_width // 2
-        
-        for i, card in enumerate(self.hand.cards):
-            x = start_x + i * (card_width + spacing)
-            y = hand_zone.y + (hand_zone.height - card_height) // 2
-            
-            # Card rect
-            card_rect = pygame.Rect(x, y, card_width, card_height)
-            
-            # Check hover
-            hover = card_rect.collidepoint(mouse_pos)
-            
-            # Get card background texture based on type
-            card_bg_texture = None
-            card_type = card.card_type.value.lower() if hasattr(card, 'card_type') else 'default'
-            
-            # Try to get specific card background from generated assets
-            possible_backgrounds = [
-                f"{card_type}_card_bg",
-                f"card_bg_{card_type}",
-                "scroll_parchment",
-                "frame_ornate"
-            ]
-            
-            for bg_name in possible_backgrounds:
-                card_bg_texture = get_asset(bg_name)
-                if card_bg_texture:
-                    break
-            
-            # Enhanced hover glow effect
-            if hover:
-                glow_size = 15
-                glow = pygame.Surface((card_width + glow_size * 2, card_height + glow_size * 2), pygame.SRCALPHA)
-                alpha = int((math.sin(pygame.time.get_ticks() * 0.015) + 1) * 80)
-                glow_color = (255, 215, 0, alpha)  # Golden glow
-                
-                # Create glow gradient
-                center = (glow.get_width() // 2, glow.get_height() // 2)
-                for radius in range(glow_size, 0, -1):
-                    current_alpha = int(alpha * (1 - radius / glow_size))
-                    color_with_alpha = (*glow_color[:3], current_alpha)
-                    pygame.draw.ellipse(glow, color_with_alpha, 
-                                      (center[0] - radius, center[1] - radius//2, 
-                                       radius * 2, radius))
-                
-                glow_rect = glow.get_rect(center=card_rect.center)
-                surface.blit(glow, glow_rect.topleft, special_flags=pygame.BLEND_ADD)
-            
-            # Draw card background
-            if card_bg_texture:
-                # CORREÇÃO: Scale texture to card size para evitar frames gigantes
-                scaled_texture = pygame.transform.scale(card_bg_texture, (card_width, card_height))
-                surface.blit(scaled_texture, card_rect)
-                
-                # Add selection highlight
-                if i == self.selected_card_index:
-                    highlight = pygame.Surface((card_width, card_height), pygame.SRCALPHA)
-                    highlight.fill((255, 215, 0, 60))  # Golden highlight
-                    surface.blit(highlight, card_rect)
-            else:
-                # Fallback: gradient background
-                if i == self.selected_card_index:
-                    color1, color2 = (100, 80, 40), (80, 60, 30)  # Selected colors
-                else:
-                    color1, color2 = (70, 55, 35), (50, 40, 25)   # Normal colors
-                
-                self._draw_gradient_rect(surface, card_rect, color1, color2)
-            
-            # Card border
-            border_color = (255, 215, 0) if i == self.selected_card_index else (120, 90, 60)
-            border_width = 3 if i == self.selected_card_index else 2
-            pygame.draw.rect(surface, border_color, card_rect, border_width)
-            
-            # Card name
-            self.draw_text_outline_to_surface(
-                surface,
-                card.name,
-                (card_rect.centerx, card_rect.y + 15),
-                self.fonts["small"],
-                self.colors["text_light"]
-            )
-            
-            # Card cost
-            cost_text = f"⚡{card.mana_cost}"
-            cost_color = self.colors["mana_blue"] if self.player.current_mana >= card.mana_cost else (150, 50, 50)
-            self.draw_text_outline_to_surface(
-                surface,
-                cost_text,
-                (card_rect.x + 15, card_rect.y + 35),
-                self.fonts["small"],
-                cost_color
-            )
-            
-            # Card effect
-            if card.damage > 0:
-                dmg_text = f"⚔{card.damage}"
-                self.draw_text_outline_to_surface(
-                    surface,
-                    dmg_text,
-                    (card_rect.x + 15, card_rect.y + 50),
-                    self.fonts["small"],
-                    (255, 100, 100)
-                )
-            
-            if card.block > 0:
-                block_text = f"🛡{card.block}"
-                self.draw_text_outline_to_surface(
-                    surface,
-                    block_text,
-                    (card_rect.x + 60, card_rect.y + 50),
-                    self.fonts["small"],
-                    (100, 100, 255)
-                )
-            
-            if card.heal > 0:
-                heal_text = f"❤{card.heal}"
-                self.draw_text_outline_to_surface(
-                    surface,
-                    heal_text,
-                    (card_rect.x + 90, card_rect.y + 50),
-                    self.fonts["small"],
-                    (100, 255, 100)
-                )
+        """Render hand to a surface with enhanced medieval cards - LEGACY METHOD."""
+        # REDIRECTION: Use new layer-based method instead
+        logger.warning("Using legacy _render_hand_to_surface - should use _draw_hand_zone instead")
+        # This is kept for compatibility but should not be called in new system
+        pass
     
     def _render_status_hud_to_surface(self, surface):
         """Render status HUD to a surface with medieval styling."""
@@ -786,7 +1328,7 @@ class MVPCombatScreen:
             surface,
             "Health",
             (hp_rect.centerx, hp_rect.y - 15),
-            self.fonts["small"],
+            Theme.FONT_BODY,
             (255, 215, 0),  # Gold
             outline_color=(0, 0, 0),
             outline_width=1
@@ -797,7 +1339,7 @@ class MVPCombatScreen:
             surface,
             f"{self.player.current_hp}/{self.player.max_hp}",
             (hp_rect.centerx, hp_rect.centery),
-            self.fonts["small"],
+            Theme.FONT_BODY,
             (255, 255, 255),
             outline_color=(0, 0, 0),
             outline_width=1
@@ -821,7 +1363,7 @@ class MVPCombatScreen:
             surface,
             "Energy",
             (mana_rect.centerx, mana_rect.y - 15),
-            self.fonts["small"],
+            Theme.FONT_BODY,
             (100, 200, 255),  # Light blue
             outline_color=(0, 0, 0),
             outline_width=1
@@ -832,7 +1374,7 @@ class MVPCombatScreen:
             surface,
             f"{self.player.current_mana}/{self.player.max_mana}",
             (mana_rect.centerx, mana_rect.centery),
-            self.fonts["small"],
+            Theme.FONT_BODY,
             (255, 255, 255),
             outline_color=(0, 0, 0),
             outline_width=1
@@ -852,7 +1394,7 @@ class MVPCombatScreen:
                 surface,
                 block_text,
                 block_rect.center,
-                self.fonts["small"],
+                Theme.FONT_BODY,
                 (255, 255, 255),
                 outline_color=(0, 0, 0),
                 outline_width=1
@@ -886,7 +1428,7 @@ class MVPCombatScreen:
             
             # Create text with outline and glow
             text = float_num["text"]
-            font = self.fonts["large"]
+            font = Theme.FONT_TITLE
             
             # Calculate text size with scale
             text_size = font.size(text)
@@ -968,7 +1510,7 @@ class MVPCombatScreen:
         
         # Card name
         card_name = self.card_animation["card"].name
-        name_surface = self.fonts["medium"].render(card_name, True, (0, 0, 0))
+        name_surface = Theme.FONT_SUBTITLE.render(card_name, True, (0, 0, 0))
         name_rect = name_surface.get_rect(center=card_rect.center)
         surface.blit(name_surface, name_rect)
     
@@ -985,7 +1527,7 @@ class MVPCombatScreen:
             self.screen,
             result_text,
             (self.width // 2, self.height // 2 - 50),
-            self.fonts["large"],
+            Theme.FONT_TITLE,
             result_color
         )
         
@@ -993,9 +1535,9 @@ class MVPCombatScreen:
         self.draw_text_outline_to_surface(
             self.screen,
             restart_text,
-            (self.width // 2, self.height // 2 + 20),
-            self.fonts["medium"],
-            self.colors["text_light"]
+            (self.screen_w // 2, self.screen_h // 2 + 20),
+            Theme.FONT_SUBTITLE,
+            Theme.get_color("text_light")
         )
     
     # Helper methods
@@ -1049,3 +1591,159 @@ class MVPCombatScreen:
         text_surface = font.render(text, True, color)
         text_rect = text_surface.get_rect(center=pos)
         surface.blit(text_surface, text_rect)
+    
+    # === SCREEN LIFECYCLE METHODS ===
+    
+    def enter_screen(self) -> None:
+        """Called when screen becomes active."""
+        logger.info(f"Entering MVP Combat Screen - Layout definitivo para {self.character_id}")
+        
+    def exit_screen(self) -> None:
+        """Called when screen becomes inactive."""
+        logger.info("Exiting MVP Combat Screen")
+    
+    # === EVENT HANDLING ===
+    
+    def handle_event(self, event: pygame.event.Event) -> Optional[str]:
+        """Handle events."""
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_ESCAPE:
+                return "back_to_menu"
+                
+            elif event.key == pygame.K_TAB:
+                # Switch biomes
+                self.current_biome = "goblin_cave" if self.current_biome == "cathedral" else "cathedral"
+                self.enemy = self._create_enemy_for_biome(self.current_biome)
+                self.turn_engine.enemy = self.enemy
+                
+            elif event.key == pygame.K_LEFT:
+                # Select previous card
+                if self.hand.cards:
+                    self.selected_card_index = max(0, self.selected_card_index - 1)
+                    
+            elif event.key == pygame.K_RIGHT:
+                # Select next card
+                if self.hand.cards:
+                    self.selected_card_index = min(len(self.hand.cards) - 1, self.selected_card_index + 1)
+                    
+            elif event.key == pygame.K_SPACE:
+                # Play selected card
+                if not self.game_over and self.hand.cards and self.selected_card_index < len(self.hand.cards):
+                    selected_card = self.hand.cards[self.selected_card_index]
+                    self._play_card(selected_card)
+                    
+            elif event.key == pygame.K_RETURN:
+                # End turn or restart if game over
+                if self.game_over:
+                    self._start_combat()
+                else:
+                    self._end_turn()
+                    
+            elif event.key == pygame.K_r:
+                # Restart combat
+                self._start_combat()
+                
+        return None
+    
+    # === CARD GAMEPLAY ===
+    
+    def _play_card(self, card: Card) -> None:
+        """Play a card with animation."""
+        try:
+            # Start card animation
+            self.card_animation = {
+                "card": card,
+                "start_time": pygame.time.get_ticks(),
+                "duration": 250,
+                "target_pos": (self.screen_w // 2, self.screen_h // 2)
+            }
+            
+            result = self.turn_engine.play_card(card)
+            if result:
+                self.hand.remove_card(card)
+                # Adjust selection
+                if self.selected_card_index >= len(self.hand.cards):
+                    self.selected_card_index = max(0, len(self.hand.cards) - 1)
+                    
+                # Create floating numbers
+                if card.damage > 0:
+                    enemy_pos = [self.screen_w // 2 + 200, self.ground_y - 100]
+                    self.float_numbers.append({
+                        "text": f"-{card.damage}",
+                        "pos": enemy_pos,
+                        "start_time": pygame.time.get_ticks(),
+                        "duration": 1000,
+                        "color": Theme.get_color("hp")
+                    })
+                
+                if card.heal > 0:
+                    player_pos = [self.screen_w // 2 - 200, self.ground_y - 100]
+                    self.float_numbers.append({
+                        "text": f"+{card.heal}",
+                        "pos": player_pos,
+                        "start_time": pygame.time.get_ticks(),
+                        "duration": 1000,
+                        "color": (100, 255, 100)
+                    })
+                
+                # Check game over
+                if self.enemy.current_hp <= 0:
+                    self.game_over = True
+                    self.victory = True
+                elif self.player.current_hp <= 0:
+                    self.game_over = True
+                    self.victory = False
+                    
+        except Exception as e:
+            logger.error(f"Error playing card {card.name}: {e}")
+    
+    def _end_turn(self):
+        """End player turn."""
+        # Discard current hand
+        for card in self.hand.cards:
+            self.deck.discard_pile.append(card)
+        self.hand.cards.clear()
+        
+        # Draw new hand
+        for _ in range(5):
+            if not self.deck.draw_pile and self.deck.discard_pile:
+                # Reshuffle
+                self.deck.draw_pile = deque(random.sample(self.deck.discard_pile, len(self.deck.discard_pile)))
+                self.deck.discard_pile.clear()
+            
+            card = self.deck.draw_card()
+            if card:
+                self.hand.add_card(card)
+        
+        # Recharge energy
+        self.player.current_mana = self.player.max_mana
+        self.turn_engine.end_player_turn()
+        
+        # Enemy turn
+        self._enemy_turn()
+        self._prepare_enemy_intent(self.enemy)
+    
+    def _enemy_turn(self) -> None:
+        """Execute enemy turn."""
+        if hasattr(self.enemy, 'intent') and self.enemy.intent == "attack":
+            damage = max(0, self.enemy.attack - self.player.block)
+            self.player.current_hp -= damage
+            self.player.block = max(0, self.player.block - self.enemy.attack)
+            
+            if damage > 0:
+                player_pos = [self.screen_w // 2 - 200, self.ground_y - 100]
+                self.float_numbers.append({
+                    "text": f"-{damage}",
+                    "pos": player_pos,
+                    "start_time": pygame.time.get_ticks(),
+                    "duration": 1000,
+                    "color": Theme.get_color("hp")
+                })
+                
+                if damage > 5:
+                    Camera.shake(intensity=6, frames=4)
+        
+        # Check if player is defeated
+        if self.player.current_hp <= 0:
+            self.game_over = True
+            self.victory = False

@@ -6,83 +6,8 @@ Centraliza cores, fontes e constantes visuais para o MVP com assets IA.
 
 import pygame
 import math
-from pathlib import Path    @classmethod
-    def draw_text_outline(cls, surface: pygame.Surface, text: str, font: pygame.font.Font, 
-                         pos: Tuple[int, int], color: Tuple[int, int, int], 
-                         outline_color: Tuple[int, int, int] = (0, 0, 0), outline_width: int = 1):
-        """Desenha texto com contorno."""
-        x, y = pos
-        
-        # Contorno
-        for dx in range(-outline_width, outline_width + 1):
-            for dy in range(-outline_width, outline_width + 1):
-                if dx != 0 or dy != 0:
-                    outline_surf = font.render(text, True, outline_color)
-                    surface.blit(outline_surf, (x + dx, y + dy))
-        
-        # Texto principal
-        text_surf = font.render(text, True, color)
-        surface.blit(text_surf, pos)
-    
-    @classmethod
-    def get_color_with_alpha(cls, color_name: str, alpha: int) -> Tuple[int, int, int, int]:
-        """
-        Retorna uma cor do tema com alpha específico.
-        
-        Args:
-            color_name: Nome da cor no tema
-            alpha: Valor alpha (0-255)
-            
-        Returns:
-            Tupla RGBA
-        """
-        color = cls.COLORS.get(color_name, cls.COLORS["text_light"])
-        return (*color, alpha)
-    
-    @classmethod
-    def calculate_glow_alpha(cls, time_ms: int) -> int:
-        """
-        Calcula o alpha do glow pulsante baseado no tempo.
-        
-        Args:
-            time_ms: Tempo atual em millisegundos
-            
-        Returns:
-            Valor alpha para o glow
-        """
-        progress = (time_ms % cls.TIMINGS["hover_glow_period"]) / cls.TIMINGS["hover_glow_period"]
-        sine_wave = math.sin(progress * 2 * math.pi)
-        alpha_range = cls.GLOW["alpha_max"] - cls.GLOW["alpha_min"]
-        return cls.GLOW["alpha_min"] + int((sine_wave + 1) * 0.5 * alpha_range)
-    
-    @classmethod
-    def load_sprite_sheet(cls, path: str, frame_count: int) -> list:
-        """
-        Carrega uma sprite sheet e divide em frames.
-        
-        Args:
-            path: Caminho para a sprite sheet
-            frame_count: Número de frames na sheet
-            
-        Returns:
-            Lista de surfaces dos frames
-        """
-        try:
-            sheet = pygame.image.load(path).convert_alpha()
-            frame_width = sheet.get_width() // frame_count
-            frame_height = sheet.get_height()
-            
-            frames = []
-            for i in range(frame_count):
-                frame_rect = pygame.Rect(i * frame_width, 0, frame_width, frame_height)
-                frame = sheet.subsurface(frame_rect).copy()
-                frames.append(frame)
-            
-            return frames
-        except Exception as e:
-            print(f"Error loading sprite sheet {path}: {e}")
-            # Return empty frames
-            return [pygame.Surface((64, 64), pygame.SRCALPHA) for _ in range(frame_count)]rt Dict, Tuple
+from pathlib import Path
+from typing import Dict, Tuple
 
 class Theme:
     """Configuração visual centralizada do Medieval Deck."""
@@ -98,6 +23,57 @@ class Theme:
         
         # Health and mana
         "hp": (224, 68, 58),              # Vermelho HP
+        "mana": (39, 131, 221),           # Azul mana
+        "bg_mask": (0, 0, 0, 140),        # Máscara de fundo
+        
+        # Text colors
+        "text_light": (245, 240, 230),    # Texto claro
+        "text_dark": (60, 50, 40),        # Texto escuro
+        "text_accent": (212, 180, 106),   # Texto de destaque
+        
+        # UI elements
+        "ui_bg": (40, 30, 20),            # Fundo de UI
+        "ui_border": (120, 100, 80),      # Bordas de UI
+        "button_normal": (80, 60, 40),    # Botão normal
+        "button_hover": (120, 90, 60),    # Botão hover
+        "button_pressed": (60, 45, 30),   # Botão pressionado
+        
+        # Card colors
+        "card_attack": (220, 68, 58),     # Cartas de ataque
+        "card_defense": (39, 131, 221),   # Cartas de defesa
+        "card_utility": (106, 190, 48),   # Cartas utilitárias
+        "card_spell": (156, 39, 176),     # Cartas mágicas
+        
+        # Glow and effects
+        "glow_gold": (255, 215, 0),       # Glow dourado
+        "glow_red": (255, 100, 100),      # Glow vermelho
+        "glow_blue": (100, 150, 255),     # Glow azul
+        
+        # Background and environment
+        "bg_main": (25, 20, 15),          # Fundo principal
+        "bg_combat": (30, 25, 20),        # Fundo de combate
+        "shadow": (0, 0, 0, 100),         # Sombra
+    }
+    
+    # === LAYOUT DEFINITIVO ===
+    CARD_SIZE = (180, 270)               # Tamanho das cartas
+    CARD_GAP = 24                        # Espaçamento entre cartas
+    CARD_HOVER_LIFT = 12                 # Elevação no hover
+    CARD_HOVER_SCALE = 1.05              # Escala no hover
+    
+    # Posições importantes
+    @classmethod
+    def get_ground_y(cls, screen_height: int) -> int:
+        """Calcula a linha do chão baseada na altura da tela."""
+        return int(screen_height * 0.55)
+    
+    # Zonas da tela (proporções)
+    ZONE_ENEMY_HEIGHT = 0.25             # 25% superior para inimigos
+    ZONE_HAND_HEIGHT = 0.18              # 18% inferior para cartas
+    ZONE_MIDDLE_HEIGHT = 0.57            # 57% meio para arena/sprites
+    
+    # Color definitions
+    _COLORS = {
         "hp_red": (224, 68, 58),          # Alias
         "hp_dark": (180, 40, 30),         # HP escuro
         "mana": (39, 131, 221),           # Azul mana

@@ -105,10 +105,11 @@ class GameUI:
         self.current_state = UIState.MENU
         self.running = True
         
-        # Check if should skip directly to character selection (if needed)
+        # Check if should skip directly to MVP Combat (if needed)
         if hasattr(config, 'skip_select') and config.skip_select:
-            logger.info("Skip select enabled, going directly to character selection")
-            self.current_state = UIState.CLEAN_CHARACTER_SELECTION
+            logger.info("Skip select enabled, going directly to MVP Combat with knight")
+            self.current_state = UIState.COMBAT
+            self._selected_character = "knight"  # Default character for skip
         else:
             self.current_state = UIState.MENU
         
@@ -176,6 +177,11 @@ class GameUI:
             
             # Initialize combat screen
             self.screens[UIState.COMBAT] = None  # Will be initialized when needed
+            
+            # If skip_select is enabled, initialize combat screen immediately
+            if hasattr(self.config, 'skip_select') and self.config.skip_select:
+                logger.info("Skip select enabled, initializing MVP Combat screen immediately")
+                self._initialize_combat_screen(self._selected_character)
             
             # Other screens will be initialized when needed
             # self.screens[UIState.STATS] = StatsScreen(...)
