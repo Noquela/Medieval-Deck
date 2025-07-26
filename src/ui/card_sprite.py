@@ -60,24 +60,25 @@ class CardSprite(pygame.sprite.Sprite):
         # Update position
         self.rect.y = int(self.base_y + self.lift)
         
-        # Pulsing outline alpha with enhanced intensity
+        # Sprint 2-b: Enhanced pulsing outline alpha with senoidal breathing
         if self.is_hovered:
-            # Enhanced senoidal pulsing effect - faster and more intense
-            pulse = (math.sin(pygame.time.get_ticks() * 0.012) + 1) * 0.5
-            self.outline_alpha = int(pulse * 180 + 75)  # Range: 75-255
+            # More intense senoidal pulsing effect
+            sin_a = math.sin(pygame.time.get_ticks() * 0.015)  # Slightly faster
+            pulse = (sin_a + 1) * 0.5  # Normalize to 0-1
+            self.outline_alpha = int(pulse * 200 + 55)  # Range: 55-255 (more intense)
             
-            # Dynamic lift based on pulse for extra effect
-            base_lift = -15
-            pulse_lift = int(pulse * 8)  # Extra 0-8 pixels
+            # Dynamic lift with enhanced range
+            base_lift = -18  # Start higher
+            pulse_lift = int(pulse * 12)  # Extra 0-12 pixels for more dramatic effect
             self.target_lift = base_lift - pulse_lift
             
-            # Dynamic scale with subtle pulsing
-            base_scale = 1.05
-            pulse_scale = pulse * 0.03  # Extra 0-0.03 scale
+            # Dynamic scale with more noticeable pulsing
+            base_scale = 1.08  # Larger base scale
+            pulse_scale = pulse * 0.07  # Extra 0-0.07 scale (more noticeable)
             self.target_scale = base_scale + pulse_scale
         else:
-            # Fade out outline
-            self.outline_alpha = max(self.outline_alpha - self.alpha_speed, 0)
+            # Faster fade out for snappier response
+            self.outline_alpha = max(self.outline_alpha - 20, 0)
             self.target_lift = 0
             self.target_scale = 1.0
             

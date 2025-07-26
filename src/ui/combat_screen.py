@@ -218,8 +218,31 @@ class CombatScreen:
         self.turn_transition_timer = 0
         
         # Sistema de animação P2
-        from ..gameplay.animation import animation_manager
+        from ..gameplay.animation import animation_manager, load_character_animations, FrameAnimation
         self.animation_manager = animation_manager
+        
+        # Sprint 2-b: Initialize real-time 30fps animations
+        self.player_animation = None
+        self.enemy_animations = {}
+        self.anim_reset_time = 0
+        self._setup_realtime_animations()
+        
+        # Sprint 2-b: Initialize TurnEngine integration
+        from ..core.turn_engine import TurnEngine, Player
+        
+        # Create player for turn engine
+        self.turn_engine_player = Player(max_hp=50, max_mana=10)
+        
+        # Get enemies from combat engine
+        enemies = getattr(self.combat_engine, 'enemies', [])
+        
+        # Initialize turn engine with proper parameters
+        self.turn_engine = TurnEngine(self.turn_engine_player, enemies[:2])  # Limit to 2 enemies for testing
+        self._setup_turn_engine_callbacks()
+        
+        # Sprint 2-b: Enhanced particle system integration
+        from ..ui.particles import particle_manager
+        self.particle_manager = particle_manager
         
         logger.info("Professional CombatScreen initialized with P2 Animation System")
         
@@ -367,6 +390,77 @@ class CombatScreen:
                     
         except Exception as e:
             logger.error(f"Erro ao inicializar animações de personagens: {e}")
+            
+    def _setup_realtime_animations(self):
+        """Sprint 2-b: Setup 30fps realtime animations for combat."""
+        try:
+            from ..gameplay.animation import FrameAnimation, load_sprite_sheet
+            
+            # Load player idle animation (30fps)
+            try:
+                knight_idle_frames = load_sprite_sheet("assets/ia/knight_idle_sheet.png", 10)
+                if knight_idle_frames:
+                    self.player_animation = FrameAnimation(knight_idle_frames, fps=30, loop=True)
+                    logger.info("✅ Player idle animation loaded (30fps)")
+                else:
+                    # Fallback: create simple animation
+                    self.player_animation = self._create_fallback_animation("player")
+                    logger.warning("Using fallback player animation")
+            except Exception as e:
+                logger.warning(f"Failed to load knight animation: {e}")
+                self.player_animation = self._create_fallback_animation("player")
+                
+            # Load enemy animations
+            enemy_types = ["goblin", "orc", "skeleton", "mage"]
+            for enemy_type in enemy_types:
+                try:
+                    enemy_frames = load_sprite_sheet(f"assets/ia/{enemy_type}_idle_sheet.png", 8)
+                    if enemy_frames:
+                        self.enemy_animations[enemy_type] = FrameAnimation(enemy_frames, fps=30, loop=True)
+                        logger.debug(f"✅ {enemy_type} animation loaded")
+                    else:
+                        self.enemy_animations[enemy_type] = self._create_fallback_animation(enemy_type)
+                except Exception as e:
+                    logger.debug(f"Failed to load {enemy_type} animation: {e}")
+                    self.enemy_animations[enemy_type] = self._create_fallback_animation(enemy_type)
+                    
+        except Exception as e:
+            logger.error(f"Failed to setup realtime animations: {e}")
+            
+    def _create_fallback_animation(self, entity_type: str):
+        """Create simple fallback animation when sprite sheets are not available."""
+        try:
+            from ..gameplay.animation import FrameAnimation
+            
+            # Create simple 2-frame animation from static sprites
+            if entity_type == "player" and self.player_sprite:
+                frame1 = self.player_sprite.copy()
+                frame2 = self.player_sprite.copy()
+                return FrameAnimation([frame1, frame2], fps=2, loop=True)
+            elif entity_type in self.enemy_sprites:
+                sprite = list(self.enemy_sprites.values())[0]  # Use first available
+                frame1 = sprite.copy()
+                frame2 = sprite.copy()
+                return FrameAnimation([frame1, frame2], fps=2, loop=True)
+            else:
+                # Create minimal placeholder
+                placeholder = pygame.Surface((64, 64), pygame.SRCALPHA)
+                placeholder.fill((100, 100, 100, 128))
+                return FrameAnimation([placeholder], fps=1, loop=True)
+        except Exception as e:
+            logger.error(f"Failed to create fallback animation: {e}")
+            from ..gameplay.animation import FrameAnimation
+            placeholder = pygame.Surface((64, 64))
+            placeholder.fill((128, 128, 128))
+            return FrameAnimation([placeholder], fps=1, loop=True)
+            
+    def _setup_turn_engine_callbacks(self):
+        """Sprint 2-b: Setup TurnEngine event callbacks."""
+        try:
+            # TurnEngine already has enemies from initialization
+            logger.info("✅ TurnEngine callbacks configured")
+        except Exception as e:
+            logger.error(f"Failed to setup turn engine callbacks: {e}")
     
     def _setup_zones(self):
         """Configura as zonas de combate seguindo as diretrizes de design."""
@@ -935,6 +1029,31 @@ class CombatScreen:
         # Atualizar sistema de animações
         animation_manager.update(dt)
         
+        # Sprint 2-b: Update 30fps realtime animations
+        if self.player_animation:
+            self.player_animation.update(dt)
+        
+        for enemy_anim in self.enemy_animations.values():
+            enemy_anim.update(dt)
+            
+        # Sprint 2-b: Handle animation reset after attack
+        if hasattr(self, 'anim_reset_time') and self.anim_reset_time > 0:
+            self.anim_reset_time -= dt * 1000  # Convert to milliseconds
+            if self.anim_reset_time <= 0:
+                # Reset to idle animation
+                try:
+                    from ..gameplay.animation import FrameAnimation, load_sprite_sheet
+                    knight_idle_frames = load_sprite_sheet("assets/ia/knight_idle_sheet.png", 10)
+                    if knight_idle_frames:
+                        self.player_animation = FrameAnimation(knight_idle_frames, fps=30, loop=True)
+                    self.anim_reset_time = 0
+                except Exception as e:
+                    logger.warning(f"Failed to reset player animation: {e}")
+        
+        # Sprint 2-b: Update particle system
+        if hasattr(self, 'particle_manager'):
+            self.particle_manager.update(dt)
+        
         # P2: Atualizar animation manager integrado
         if hasattr(self, 'animation_manager'):
             self.animation_manager.update(dt)
@@ -1180,18 +1299,28 @@ class CombatScreen:
                 # Fallback: try to get data from card object
                 card_data = getattr(card, '__dict__', {})
             
-            # Sprint 2: Use enhanced TurnEngine methods with particles
+            # Sprint 2-b: Enhanced TurnEngine integration with particles and animations
             if target:  # Card targets an enemy
                 target_pos = self._get_target_position(target)
                 
                 # Apply damage with particle effects
                 if card_data.get("damage"):
                     damage = card_data["damage"]
+                    
+                    # Sprint 2-b: Trigger attack animation
+                    self._trigger_attack_animation(card_data.get("type", "attack"))
+                    
+                    # Apply damage through TurnEngine
                     actual_damage = self.turn_engine.apply_damage(
                         target, damage, 
-                        particle_emitter=self.particle_system if hasattr(self, 'particle_system') else None,
+                        particle_emitter=getattr(self, 'particle_manager', None),
                         target_pos=target_pos
                     )
+                    
+                    # Sprint 2-b: Spawn hit particles
+                    if hasattr(self, 'particle_manager'):
+                        self.particle_manager.spawn_hit_particles(target_pos, count=15)
+                    
                     logger.info(f"Card dealt {actual_damage} damage to {getattr(target, 'name', 'target')}")
                     
             else:  # Card affects player
@@ -1200,11 +1329,22 @@ class CombatScreen:
                 # Apply healing with particle effects
                 if card_data.get("heal"):
                     heal_amount = card_data["heal"]
+                    
+                    # Sprint 2-b: Trigger heal animation
+                    self._trigger_heal_animation()
+                    
                     actual_healing = self.turn_engine.apply_healing(
                         self.turn_engine.player, heal_amount,
-                        particle_emitter=self.particle_system if hasattr(self, 'particle_system') else None,
+                        particle_emitter=getattr(self, 'particle_manager', None),
                         target_pos=player_pos
                     )
+                    
+                    # Sprint 2-b: Spawn heal particles
+                    if hasattr(self, 'particle_manager'):
+                        heal_emitter = self.particle_manager.emitters[0] if self.particle_manager.emitters else None
+                        if heal_emitter:
+                            heal_emitter.emit_heal(count=8)
+                    
                     logger.info(f"Card healed player for {actual_healing} HP")
                     
             # Deduct mana cost
@@ -1235,6 +1375,48 @@ class CombatScreen:
         except Exception as e:
             logger.warning(f"Failed to get target position: {e}")
             return (600, 200)
+            
+    def _trigger_attack_animation(self, card_type: str = "attack"):
+        """Sprint 2-b: Trigger player attack animation with auto-reset."""
+        try:
+            from ..gameplay.animation import FrameAnimation, load_sprite_sheet
+            
+            # Load attack animation based on card type
+            if card_type in ["spell", "magic"]:
+                # Use cast animation for spells
+                attack_frames = load_sprite_sheet("assets/ia/knight_cast_sheet.png", 8)
+                reset_duration = 250  # 250ms for cast
+            else:
+                # Use attack animation for physical attacks
+                attack_frames = load_sprite_sheet("assets/ia/knight_attack_sheet.png", 8)
+                reset_duration = 300  # 300ms for attack
+                
+            if attack_frames:
+                self.player_animation = FrameAnimation(attack_frames, fps=30, loop=False)
+                self.anim_reset_time = reset_duration  # Auto-reset to idle
+                logger.debug(f"Triggered {card_type} animation")
+            else:
+                logger.warning(f"No animation frames found for {card_type}")
+                
+        except Exception as e:
+            logger.warning(f"Failed to trigger attack animation: {e}")
+            
+    def _trigger_heal_animation(self):
+        """Sprint 2-b: Trigger player heal animation."""
+        try:
+            from ..gameplay.animation import FrameAnimation, load_sprite_sheet
+            
+            # Try to load heal/cast animation
+            heal_frames = load_sprite_sheet("assets/ia/knight_cast_sheet.png", 8)
+            if heal_frames:
+                self.player_animation = FrameAnimation(heal_frames, fps=30, loop=False)
+                self.anim_reset_time = 250  # Auto-reset to idle after 250ms
+                logger.debug("Triggered heal animation")
+            else:
+                logger.warning("No heal animation frames found")
+                
+        except Exception as e:
+            logger.warning(f"Failed to trigger heal animation: {e}")
             
     def _finish_card_use(self):
         """Finaliza o uso da carta."""
@@ -1532,19 +1714,51 @@ class CombatScreen:
     # ========== END P1 DRAG & DROP SYSTEM ==========
         
     def _end_turn(self):
-        """Finaliza o turno do jogador."""
+        """Sprint 2-b: Enhanced turn ending with TurnEngine integration."""
         try:
             # Trigger turn transition animation
             self._start_turn_transition()
             
-            # Usar combat engine para processar fim de turno
-            if hasattr(self.combat_engine, 'end_turn'):
-                self.combat_engine.end_turn()
+            # Sprint 2-b: Use TurnEngine for proper turn management
+            if hasattr(self, 'turn_engine'):
+                # Process mini turn loop
+                game_continues = self.turn_engine.mini_turn_loop(
+                    particle_emitter=getattr(self, 'particle_manager', None)
+                )
                 
-            self.state = CombatState.ENEMY_TURN
-            logger.info("Player turn ended")
+                if not game_continues:
+                    # Game over - check win/loss
+                    if self.turn_engine.player.hp <= 0:
+                        self.state = CombatState.DEFEAT
+                        logger.info("Player defeated!")
+                    elif all(e.hp <= 0 for e in self.turn_engine.enemies):
+                        self.state = CombatState.VICTORY
+                        logger.info("All enemies defeated!")
+                else:
+                    # Continue to enemy turn
+                    self.state = CombatState.ENEMY_TURN
+                    logger.info("Player turn ended, enemy turn starting")
+                    
+                    # Sprint 2-b: Use deck system for discard/redraw
+                    if hasattr(self.combat_engine, 'deck_manager'):
+                        cards_drawn = self.combat_engine.deck_manager.end_turn()
+                        logger.info(f"End turn: Drew {cards_drawn} new cards from deck")
+                    else:
+                        # Fallback: simple card draw
+                        if hasattr(self, 'draw_card_from_deck'):
+                            self.draw_card_from_deck(animate=True)
+            else:
+                # Fallback to combat engine
+                if hasattr(self.combat_engine, 'end_turn'):
+                    self.combat_engine.end_turn()
+                    
+                self.state = CombatState.ENEMY_TURN
+                logger.info("Player turn ended (fallback)")
+                
         except Exception as e:
             logger.error(f"Failed to end turn: {e}")
+            # Fallback behavior
+            self.state = CombatState.ENEMY_TURN
             
     def _start_turn_transition(self):
         """Inicia animação de transição de turno."""
@@ -1594,6 +1808,10 @@ class CombatScreen:
         # 7. Debug info (se necessário)
         if hasattr(self, 'debug_mode') and self.debug_mode:
             self._draw_debug_info()
+            
+        # Sprint 2-b: Draw particles (last for proper layering)
+        if hasattr(self, 'particle_manager'):
+            self.particle_manager.draw(self.screen)
             
     def _draw_enemy_zone(self):
         """Desenha zona de inimigos com overlay escuro e sprites escalados."""
@@ -1692,18 +1910,32 @@ class CombatScreen:
         return enemy_type_mapping.get(enemy_type_str, 'goblin')
                 
     def _draw_player_sprite(self):
-        """Desenha sprite do jogador centralizado usando animação 30fps."""
-        # Obter frame atual da animação do knight
+        """Sprint 2-b: Desenha sprite do jogador usando animação 30fps realtime."""
+        # Sprint 2-b: Use realtime 30fps animation
+        if hasattr(self, 'player_animation') and self.player_animation:
+            try:
+                current_frame = self.player_animation.current()
+                if current_frame:
+                    # Position sprite centered above hand zone
+                    sprite_rect = current_frame.get_rect(
+                        midbottom=(self.width // 2, self.player_hand_zone.top - 10)
+                    )
+                    self.screen.blit(current_frame, sprite_rect)
+                    return
+            except Exception as e:
+                logger.warning(f"Failed to draw player animation: {e}")
+        
+        # Fallback: Use old animation system
         current_frame = animation_manager.get_current_frame("knight")
         
         if current_frame:
-            # Posicionar sprite do jogador no centro-base, acima da zona da mão
+            # Position sprite centered above hand zone
             sprite_rect = current_frame.get_rect(
                 midbottom=(self.width // 2, self.player_hand_zone.top - 10)
             )
             self.screen.blit(current_frame, sprite_rect)
         elif self.player_sprite:
-            # Fallback para sprite estático
+            # Final fallback to static sprite
             sprite_rect = self.player_sprite.get_rect(
                 midbottom=(self.width // 2, self.player_hand_zone.top - 10)
             )

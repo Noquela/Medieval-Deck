@@ -498,6 +498,23 @@ class Deck:
     def get_hand_size(self) -> int:
         """Retorna o tamanho atual da mão."""
         return len(self.hand)
+        
+    def end_turn(self) -> int:
+        """
+        Sprint 2-b: End turn logic - discard hand and draw new card.
+        
+        Returns:
+            Number of cards drawn
+        """
+        # Discard current hand
+        discarded = self.discard_hand()
+        logger.info(f"End turn: Discarded {discarded} cards")
+        
+        # Draw 1 new card for next turn
+        drawn_cards = self.draw(1)
+        logger.info(f"End turn: Drew {len(drawn_cards)} cards for next turn")
+        
+        return len(drawn_cards)
     
     def get_deck_size(self) -> int:
         """Retorna o tamanho total do deck."""

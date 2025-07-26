@@ -50,32 +50,39 @@ PARTICLE_CONFIGS = {
         velocity_range=((-0.5, 0.5), (-2.0, -0.5)),
         size_range=(1, 3),
         lifetime_range=(3.0, 6.0),
-        color=(200, 150, 255, 180),
-        gravity=0.0
+        color=(138, 43, 226, 180),
+        fade_rate=0.3
+    ),
+    ParticleType.GOLDEN_SPARKS: ParticleConfig(
+        velocity_range=((-2.0, 2.0), (-2.0, 2.0)),
+        size_range=(0.5, 2.0),
+        lifetime_range=(1.0, 2.0),
+        color=(255, 215, 0, 200),
+        fade_rate=0.8
     ),
     ParticleType.DAMAGE_SPARKS: ParticleConfig(
-        velocity_range=((-50, 50), (-80, -20)),
-        size_range=(2, 4),
-        lifetime_range=(0.3, 0.8),
-        color=(255, 200, 50, 255),
-        gravity=100.0,
-        fade_rate=2.0
+        velocity_range=((-3.0, 3.0), (-4.0, 1.0)),
+        size_range=(1.0, 3.0),
+        lifetime_range=(0.8, 1.5),
+        color=(255, 100, 50, 220),  # Orange-red sparks
+        gravity=200.0,
+        fade_rate=1.2
     ),
     ParticleType.IMPACT_BURST: ParticleConfig(
-        velocity_range=((-100, 100), (-100, 100)),
-        size_range=(3, 6),
-        lifetime_range=(0.2, 0.5),
-        color=(255, 150, 50, 255),
-        gravity=80.0,
-        fade_rate=3.0
+        velocity_range=((-4.0, 4.0), (-3.0, 3.0)),
+        size_range=(2.0, 5.0),
+        lifetime_range=(0.5, 1.0),
+        color=(255, 255, 100, 180),  # Bright yellow burst
+        gravity=50.0,
+        fade_rate=2.0
     ),
     ParticleType.HEAL_GLOW: ParticleConfig(
-        velocity_range=((-20, 20), (-40, -10)),
-        size_range=(2, 5),
-        lifetime_range=(1.0, 2.0),
-        color=(100, 255, 150, 200),
-        gravity=-30.0,  # Float upward
-        fade_rate=1.0
+        velocity_range=((-1.0, 1.0), (-2.0, 0.0)),
+        size_range=(2.0, 4.0),
+        lifetime_range=(2.0, 3.0),
+        color=(100, 255, 100, 150),  # Green healing glow
+        gravity=-50.0,  # Float upward
+        fade_rate=0.5
     )
 }
 
@@ -508,6 +515,38 @@ class ParticleManager:
             import time
             time.sleep(3)
             self.remove_emitter(emitter)
+        
+        threading.Thread(target=remove_later, daemon=True).start()
+        
+    def spawn_hit_particles(self, pos: Tuple[int, int], count: int = 12):
+        """Sprint 2-b: Spawn hit particles at position for combat damage."""
+        x, y = pos
+        emitter = ParticleEmitter(
+            x - 15, y - 15, 30, 30,
+            ParticleType.DAMAGE_SPARKS,
+            emission_rate=0,  # Burst only
+            max_particles=count
+        )
+        emitter.emit_burst(count)
+        self.add_emitter(emitter)
+        
+        # Also add impact burst for extra effect
+        impact_emitter = ParticleEmitter(
+            x - 10, y - 10, 20, 20,
+            ParticleType.IMPACT_BURST,
+            emission_rate=0,
+            max_particles=8
+        )
+        impact_emitter.emit_burst(8)
+        self.add_emitter(impact_emitter)
+        
+        # Auto-remove after particles fade
+        import threading
+        def remove_later():
+            import time
+            time.sleep(2)
+            self.remove_emitter(emitter)
+            self.remove_emitter(impact_emitter)
         
         threading.Thread(target=remove_later, daemon=True).start()
     
