@@ -560,6 +560,82 @@ class CombatScreen:
             
         logger.info(f"P2-6: Drew initial hand of {len(self.player_hand)} cards")
         
+    def draw_card_from_deck(self, animate=True):
+        """Sprint 2: Draw a single card from deck with animation."""
+        if len(self.player_hand) >= 10:  # Max hand size
+            logger.warning("Hand is full, cannot draw card")
+            return None
+            
+        available_cards = [
+            {"name": "Fireball", "cost": 3, "damage": 4, "type": "spell"},
+            {"name": "Sword Strike", "cost": 2, "damage": 3, "type": "attack"},
+            {"name": "Heal", "cost": 2, "heal": 3, "type": "heal"},
+            {"name": "Lightning Bolt", "cost": 4, "damage": 5, "type": "spell"},
+            {"name": "Shield Block", "cost": 1, "defense": 2, "type": "defense"},
+            {"name": "Ice Shard", "cost": 2, "damage": 2, "type": "spell"},
+            {"name": "Power Strike", "cost": 3, "damage": 4, "type": "attack"},
+            {"name": "Minor Heal", "cost": 1, "heal": 2, "type": "heal"}
+        ]
+        
+        import random
+        new_card = random.choice(available_cards)
+        position = len(self.player_hand)
+        
+        self._add_card_to_hand(new_card, position)
+        self._reorganize_hand()  # Reposition all cards
+        
+        logger.info(f"Drew {new_card['name']} from deck")
+        return new_card
+        
+    def discard_card(self, card_index: int, animate=True):
+        """Sprint 2: Discard a card from hand with animation."""
+        if card_index < 0 or card_index >= len(self.player_hand):
+            logger.warning(f"Invalid card index for discard: {card_index}")
+            return False
+            
+        discarded_card = self.player_hand.pop(card_index)
+        
+        # Trigger discard animation if card has sprite
+        if animate and discarded_card.get("sprite"):
+            # Could add discard animation here
+            pass
+            
+        self._reorganize_hand()  # Reposition remaining cards
+        
+        logger.info(f"Discarded {discarded_card['data']['name']}")
+        return True
+        
+    def _reorganize_hand(self):
+        """Sprint 2: Reorganize hand positions after draw/discard."""
+        for i, card in enumerate(self.player_hand):
+            slot_width = self.player_hand_zone.width // max(5, len(self.player_hand))
+            slot_x = self.player_hand_zone.left + i * slot_width + 10
+            slot_y = self.player_hand_zone.top + 10
+            
+            # Update card position
+            card["original_pos"] = (slot_x, slot_y)
+            card["slot_index"] = i
+            card["rect"].x = slot_x
+            card["rect"].y = slot_y
+            
+            # Update sprite position if available
+            if card.get("sprite"):
+                card["sprite"].set_position((slot_x, slot_y))
+                
+    def get_hand_size(self) -> int:
+        """Sprint 2: Get current hand size."""
+        return len(self.player_hand)
+        
+    def can_play_card(self, card_index: int) -> bool:
+        """Sprint 2: Check if a card can be played (mana cost, etc)."""
+        if card_index < 0 or card_index >= len(self.player_hand):
+            return False
+            
+        card = self.player_hand[card_index]
+        card_cost = card["data"].get("cost", 0)
+        
+        return self.turn_engine.player.mana >= card_cost
+        
     def _add_card_to_hand(self, card_data: dict, position: int):
         """P2-6: Adiciona uma carta na mão na posição especificada com CardSprite."""
         slot_width = self.player_hand_zone.width // 5
@@ -572,7 +648,8 @@ class CombatScreen:
         from .card_sprite import CardSprite
         card_sprite = None
         try:
-            card_surface = self._create_card_surface(card_data, slot_width - 20, slot_height)
+            # Sprint 2: Create card surface without text to avoid duplication
+            card_surface = self._create_card_surface(card_data, slot_width - 20, slot_height, include_text=False)
             card_sprite = CardSprite(card_surface, (slot_x, slot_y))  # Posição como tupla
         except Exception as e:
             logger.warning(f"Failed to create CardSprite: {e}")
@@ -603,7 +680,7 @@ class CombatScreen:
         }
         self.player_hand.append(card)
         
-    def _create_card_surface(self, card_data: dict, width: int, height: int) -> pygame.Surface:
+    def _create_card_surface(self, card_data: dict, width: int, height: int, include_text: bool = True) -> pygame.Surface:
         """P2: Cria surface visual para carta."""
         surface = pygame.Surface((width, height), pygame.SRCALPHA)
         
@@ -619,8 +696,8 @@ class CombatScreen:
         pygame.draw.rect(surface, card_color, surface.get_rect(), border_radius=8)
         pygame.draw.rect(surface, (255, 255, 255), surface.get_rect(), width=2, border_radius=8)
         
-        # Renderizar texto (simples para P2)
-        if hasattr(pygame, 'font') and pygame.font.get_init():
+        # Sprint 2: Only include text if requested (for CardSprite, we skip text to avoid duplication)
+        if include_text and hasattr(pygame, 'font') and pygame.font.get_init():
             font = pygame.font.Font(None, 24)
             text = font.render(card_data["name"], True, (255, 255, 255))
             text_rect = text.get_rect(centerx=width//2, y=10)
@@ -1087,14 +1164,77 @@ class CombatScreen:
             self._finish_card_use()
             
     def _apply_card_effect(self, card: Card, target):
-        """Aplica o efeito da carta no combate."""
+        """
+        Aplica o efeito da carta no combate.
+        Sprint 2: Enhanced with particle effects and TurnEngine integration.
+        """
         try:
-            # Usar o combat engine para aplicar a carta
+            # Get card data from player hand
+            card_data = None
+            for hand_card in self.player_hand:
+                if hand_card.get("selected") or hand_card == card:
+                    card_data = hand_card.get("data", {})
+                    break
+                    
+            if not card_data:
+                # Fallback: try to get data from card object
+                card_data = getattr(card, '__dict__', {})
+            
+            # Sprint 2: Use enhanced TurnEngine methods with particles
+            if target:  # Card targets an enemy
+                target_pos = self._get_target_position(target)
+                
+                # Apply damage with particle effects
+                if card_data.get("damage"):
+                    damage = card_data["damage"]
+                    actual_damage = self.turn_engine.apply_damage(
+                        target, damage, 
+                        particle_emitter=self.particle_system if hasattr(self, 'particle_system') else None,
+                        target_pos=target_pos
+                    )
+                    logger.info(f"Card dealt {actual_damage} damage to {getattr(target, 'name', 'target')}")
+                    
+            else:  # Card affects player
+                player_pos = (400, 300)  # Default player position
+                
+                # Apply healing with particle effects
+                if card_data.get("heal"):
+                    heal_amount = card_data["heal"]
+                    actual_healing = self.turn_engine.apply_healing(
+                        self.turn_engine.player, heal_amount,
+                        particle_emitter=self.particle_system if hasattr(self, 'particle_system') else None,
+                        target_pos=player_pos
+                    )
+                    logger.info(f"Card healed player for {actual_healing} HP")
+                    
+            # Deduct mana cost
+            if card_data.get("cost"):
+                cost = card_data["cost"]
+                self.turn_engine.player.mana = max(0, self.turn_engine.player.mana - cost)
+                logger.debug(f"Spent {cost} mana, remaining: {self.turn_engine.player.mana}")
+            
+            # Fallback to combat engine if available
             if hasattr(self.combat_engine, 'use_card'):
                 self.combat_engine.use_card(card, target)
-            logger.info(f"Applied card effect: {card} on {target}")
+                
         except Exception as e:
             logger.error(f"Failed to apply card effect: {e}")
+            
+    def _get_target_position(self, target) -> Tuple[int, int]:
+        """Sprint 2: Get screen position for a target entity."""
+        try:
+            # Try to find target in enemy slots
+            if hasattr(self, 'enemy_slots') and hasattr(self.combat_engine, 'enemies'):
+                for i, enemy in enumerate(self.combat_engine.enemies):
+                    if enemy == target and i < len(self.enemy_slots):
+                        slot = self.enemy_slots[i]
+                        return slot.rect.center
+                        
+            # Default enemy position
+            return (600, 200)
+        except Exception as e:
+            logger.warning(f"Failed to get target position: {e}")
+            return (600, 200)
             
     def _finish_card_use(self):
         """Finaliza o uso da carta."""
@@ -1321,27 +1461,28 @@ class CombatScreen:
                 logger.debug(f"Hovering: {card['data']['name']}")
                 
     def _update_card_animations(self, dt: float):
-        """P2: Atualiza animações avançadas das cartas com CardSprite system."""
+        """Sprint 2: Enhanced card animations using CardSprite system."""
         import math
         
         for card in self.player_hand:
-            # P2: Usar CardSprite se disponível
-            if hasattr(card, 'sprite') and card['sprite']:
-                # CardSprite handle suas próprias animações
-                card['sprite'].update(dt)
+            # Sprint 2: Use CardSprite if available
+            if card.get('sprite'):
+                # CardSprite handles its own animations with enhanced pulsing
+                card_sprite = card['sprite']
+                card_sprite.update(self.mouse_pos, dt)
                 
                 # Sync position from CardSprite back to card rect
-                card["rect"] = card['sprite'].rect
+                card["rect"] = card_sprite.rect.copy()
             else:
-                # Fallback para sistema antigo melhorado
+                # Fallback to original animation system (enhanced)
                 card["animation_time"] += dt
                 
-                # P2: Efeitos de hover aprimorados
+                # Enhanced hover effects
                 if card["is_hovered"] and not self.is_dragging:
-                    card["target_hover_y"] = -25  # P2: Hover mais pronunciado
-                    card["target_scale"] = 1.15   # P2: Scale maior
-                    card["target_glow_alpha"] = 200  # P2: Glow mais forte
-                    card["target_rotation"] = 3   # P2: Rotação mais visível
+                    card["target_hover_y"] = -25  # More pronounced hover
+                    card["target_scale"] = 1.15   # Larger scale
+                    card["target_glow_alpha"] = 200  # Stronger glow
+                    card["target_rotation"] = 3   # More visible rotation
                 elif card["is_selected"]:
                     card["target_hover_y"] = -15
                     card["target_scale"] = 1.08
@@ -1353,8 +1494,8 @@ class CombatScreen:
                     card["target_glow_alpha"] = 0
                     card["target_rotation"] = 0
                     
-                # P2: Interpolação mais suave
-                ease_speed = 10.0  # P2: Mais responsivo
+                # Smoother interpolation
+                ease_speed = 10.0
                 card["hover_offset_y"] += (card["target_hover_y"] - card["hover_offset_y"]) * dt * ease_speed
                 card["scale"] += (card["target_scale"] - card["scale"]) * dt * ease_speed
                 card["glow_alpha"] += (card["target_glow_alpha"] - card["glow_alpha"]) * dt * ease_speed
@@ -1678,130 +1819,136 @@ class CombatScreen:
             return (255, 50, 50)  # Vermelho
             
     def _draw_player_hand(self):
-        """Desenha zona da mão do jogador com cartas - P1 advanced animations."""
+        """
+        Desenha zona da mão do jogador com cartas - Sprint 2 Enhanced.
+        Uses CardSprite system with pulsing glow and enhanced animations.
+        """
         # Painel azul-escuro translúcido para a mão
         hand_overlay = pygame.Surface(self.player_hand_zone.size, pygame.SRCALPHA)
         hand_overlay.fill((30, 40, 90, 200))  # Azul-escuro translúcido
         self.screen.blit(hand_overlay, self.player_hand_zone.topleft)
         
-        # P1: Desenhar cartas com animações avançadas
+        # Sprint 2: Use CardSprite system for enhanced visuals
+        for card in self.player_hand:
+            # Sprint 2: Use CardSprite if available
+            if card.get("sprite"):
+                # Enhanced CardSprite with pulsing glow
+                card_sprite = card["sprite"]
+                card_sprite.draw(self.screen)
+                
+                # Draw card info on top
+                self._draw_card_info_overlay(card, card_sprite.rect)
+            else:
+                # Fallback to original rendering
+                self._draw_card_fallback(card)
+                
+    def _draw_card_info_overlay(self, card, card_rect):
+        """Sprint 2: Draw card information overlay on CardSprite."""
+        data = card["data"]
+        
+        # Fonts for card info
         font = pygame.font.Font(None, 20)
         font_small = pygame.font.Font(None, 16)
         
-        for card in self.player_hand:
-            # P1: Aplicar transformações de animação
-            original_rect = card["rect"]
-            scale = max(0.1, card.get("scale", 1.0))  # Garantir escala mínima
-            rotation = card.get("rotation", 0)
-            glow_alpha = card.get("glow_alpha", 0)
+        # Card name
+        if "name" in data:
+            name_surface = font.render(data["name"], True, (255, 255, 255))
+            name_rect = name_surface.get_rect(centerx=card_rect.centerx, y=card_rect.y + 10)
+            self.screen.blit(name_surface, name_rect)
+        
+        # Card cost (top-left corner)
+        if "cost" in data:
+            cost_surface = font_small.render(str(data["cost"]), True, (100, 200, 255))
+            cost_rect = pygame.Rect(card_rect.x + 5, card_rect.y + 5, 25, 25)
+            pygame.draw.circle(self.screen, (20, 30, 60), cost_rect.center, 12)
+            pygame.draw.circle(self.screen, (100, 200, 255), cost_rect.center, 12, 2)
+            cost_text_rect = cost_surface.get_rect(center=cost_rect.center)
+            self.screen.blit(cost_surface, cost_text_rect)
+        
+        # Card effects (center)
+        y_offset = card_rect.centery
+        if "damage" in data:
+            damage_text = font_small.render(f"⚔️ {data['damage']}", True, (255, 100, 100))
+            damage_rect = damage_text.get_rect(centerx=card_rect.centerx, y=y_offset)
+            self.screen.blit(damage_text, damage_rect)
+            y_offset += 20
             
-            # Calcular rect escalado com validação
-            scaled_width = max(1, int(original_rect.width * scale))
-            scaled_height = max(1, int(original_rect.height * scale))
-            scaled_rect = pygame.Rect(0, 0, scaled_width, scaled_height)
-            scaled_rect.center = original_rect.center
+        if "heal" in data:
+            heal_text = font_small.render(f"❤️ {data['heal']}", True, (100, 255, 100))
+            heal_rect = heal_text.get_rect(centerx=card_rect.centerx, y=y_offset)
+            self.screen.blit(heal_text, heal_rect)
+            y_offset += 20
             
-            data = card["data"]
+        if "defense" in data:
+            defense_text = font_small.render(f"🛡️ {data['defense']}", True, (100, 100, 255))
+            defense_rect = defense_text.get_rect(centerx=card_rect.centerx, y=y_offset)
+            self.screen.blit(defense_text, defense_rect)
+    
+    def _draw_card_fallback(self, card):
+        """Fallback card rendering when CardSprite is not available."""
+        # Aplicar transformações de animação
+        original_rect = card["rect"]
+        scale = max(0.1, card.get("scale", 1.0))  # Garantir escala mínima
+        rotation = card.get("rotation", 0)
+        glow_alpha = card.get("glow_alpha", 0)
+        
+        # Calcular rect escalado com validação
+        scaled_width = max(1, int(original_rect.width * scale))
+        scaled_height = max(1, int(original_rect.height * scale))
+        scaled_rect = pygame.Rect(0, 0, scaled_width, scaled_height)
+        scaled_rect.center = original_rect.center
+        
+        data = card["data"]
+        
+        # Cores dinâmicas com glow
+        if card["is_selected"]:
+            border_color = (255, 215, 0)  # Dourado para selecionada
+            bg_color = (70, 80, 120, 220)
+            border_width = 3
+        elif card["is_hovered"]:
+            border_color = (150, 200, 255)  # Azul claro para hover
+            bg_color = (60, 70, 110, 220)
+            border_width = 2
+        else:
+            border_color = (80, 80, 80)  # Cinza normal
+            bg_color = (50, 50, 50, 180)
+            border_width = 1
             
-            # P1: Cores dinâmicas com glow
-            if card["is_selected"]:
-                border_color = (255, 215, 0)  # Dourado para selecionada
-                bg_color = (70, 80, 120, 220)
-                border_width = 3
-            elif card["is_hovered"]:
-                border_color = (150, 200, 255)  # Azul claro para hover
-                bg_color = (60, 70, 110, 220)
-                border_width = 2
-            else:
-                border_color = (80, 80, 80)  # Cinza normal
-                bg_color = (50, 50, 50, 180)
-                border_width = 1
-                
-            # P1: Criar surface da carta com animações
-            card_surface = pygame.Surface(scaled_rect.size, pygame.SRCALPHA)
-            
-            # Efeito de glow se necessário
-            if glow_alpha > 5:
-                glow_width = max(1, scaled_rect.width + 10)
-                glow_height = max(1, scaled_rect.height + 10)
-                glow_surface = pygame.Surface((glow_width, glow_height), pygame.SRCALPHA)
-                glow_color = (*border_color, int(min(255, max(0, glow_alpha))))
-                pygame.draw.rect(glow_surface, glow_color, glow_surface.get_rect(), border_radius=8)
-                glow_rect = glow_surface.get_rect(center=scaled_rect.center)
-                self.screen.blit(glow_surface, glow_rect.topleft)
-            
-            # Fundo da carta
-            card_surface.fill(bg_color)
-            
-            # P1: Aplicar rotação se necessário
-            if abs(rotation) > 0.1:
-                card_surface = pygame.transform.rotate(card_surface, rotation)
-                # Recalcular posição após rotação
-                rotated_rect = card_surface.get_rect(center=scaled_rect.center)
-                self.screen.blit(card_surface, rotated_rect.topleft)
-                display_rect = rotated_rect
-            else:
-                self.screen.blit(card_surface, scaled_rect.topleft)
-                display_rect = scaled_rect
-            
-            # Borda da carta
-            pygame.draw.rect(self.screen, border_color, display_rect, border_width, border_radius=5)
-            
-            # P1: Escalar texto baseado na escala da carta
-            font_scale = min(scale, 1.2)  # Limitar escala do texto
-            scaled_font_size = int(20 * font_scale)
-            scaled_font_small_size = int(16 * font_scale)
-            
-            if scaled_font_size != 20:
-                scaled_font = pygame.font.Font(None, scaled_font_size)
-                scaled_font_small = pygame.font.Font(None, scaled_font_small_size)
-            else:
-                scaled_font = font
-                scaled_font_small = font_small
-            
-            # Nome da carta
-            name_text = scaled_font.render(data["name"], True, (255, 255, 255))
-            name_rect = name_text.get_rect(centerx=display_rect.centerx, y=display_rect.y + int(5 * scale))
-            self.screen.blit(name_text, name_rect)
-            
-            # Custo da carta (canto superior esquerdo)
-            cost = data.get("cost", 0)
-            cost_text = scaled_font_small.render(f"{cost}", True, (100, 150, 255))
-            self.screen.blit(cost_text, (display_rect.x + int(5 * scale), display_rect.y + int(5 * scale)))
-            
-            # Efeito da carta (centro)
-            effect_y = display_rect.y + int(35 * scale)
-            if "damage" in data:
-                damage_text = scaled_font_small.render(f"DMG: {data['damage']}", True, (255, 100, 100))
-                damage_rect = damage_text.get_rect(centerx=display_rect.centerx, y=effect_y)
-                self.screen.blit(damage_text, damage_rect)
-            elif "heal" in data:
-                heal_text = scaled_font_small.render(f"HEAL: {data['heal']}", True, (100, 255, 100))
-                heal_rect = heal_text.get_rect(centerx=display_rect.centerx, y=effect_y)
-                self.screen.blit(heal_text, heal_rect)
-            elif "defense" in data:
-                def_text = scaled_font_small.render(f"DEF: {data['defense']}", True, (200, 200, 100))
-                def_rect = def_text.get_rect(centerx=display_rect.centerx, y=effect_y)
-                self.screen.blit(def_text, def_rect)
-                
-            # Tipo da carta (parte inferior)
-            type_text = scaled_font_small.render(data["type"].upper(), True, (180, 180, 180))
-            type_rect = type_text.get_rect(centerx=display_rect.centerx, y=display_rect.bottom - int(20 * scale))
-            self.screen.blit(type_text, type_rect)
-            
-        # P1: Visual feedback para drag zone
-        if self.state == CombatState.TARGET_SELECTION or (self.is_dragging and self.dragging_card):
-            # Destacar zona de inimigos como zona de drop válida
-            drop_overlay = pygame.Surface(self.enemy_zone.size, pygame.SRCALPHA)
-            drop_overlay.fill((100, 255, 100, 50))  # Verde translúcido
-            self.screen.blit(drop_overlay, self.enemy_zone.topleft)
-            
-            # Desenhar borda pulsante na zona de drop
-            pulse_alpha = int(128 + 127 * abs(pygame.time.get_ticks() % 1000 - 500) / 500)
-            pygame.draw.rect(self.screen, (100, 255, 100, pulse_alpha), self.enemy_zone, 3)
-            
+        # Criar surface da carta com animações
+        card_surface = pygame.Surface(scaled_rect.size, pygame.SRCALPHA)
+        
+        # Efeito de glow se necessário
+        if glow_alpha > 5:
+            glow_width = max(1, scaled_rect.width + 10)
+            glow_height = max(1, scaled_rect.height + 10)
+            glow_surface = pygame.Surface((glow_width, glow_height), pygame.SRCALPHA)
+            glow_color = (*border_color, int(min(255, max(0, glow_alpha))))
+            pygame.draw.rect(glow_surface, glow_color, glow_surface.get_rect(), border_radius=8)
+            glow_rect = glow_surface.get_rect(center=scaled_rect.center)
+            self.screen.blit(glow_surface, glow_rect.topleft)
+        
+        # Fundo da carta
+        card_surface.fill(bg_color)
+        
+        # Aplicar rotação se necessário
+        if abs(rotation) > 0.1:
+            card_surface = pygame.transform.rotate(card_surface, rotation)
+            rotated_rect = card_surface.get_rect(center=scaled_rect.center)
+            self.screen.blit(card_surface, rotated_rect.topleft)
+            display_rect = rotated_rect
+        else:
+            self.screen.blit(card_surface, scaled_rect.topleft)
+            display_rect = scaled_rect
+        
+        # Borda da carta
+        pygame.draw.rect(self.screen, border_color, display_rect, border_width, border_radius=5)
+        
+        # Desenhar informações da carta
+        self._draw_card_info_overlay(card, display_rect)
+        
     def _draw_buttons(self):
-        """Desenha botões da interface."""
+        """Desenha todos os botões da interface."""
+        # Desenhar botão End Turn
         if hasattr(self, 'end_turn_button'):
             self.end_turn_button.draw(self.screen)
             

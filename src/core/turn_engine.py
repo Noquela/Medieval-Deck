@@ -496,13 +496,16 @@ class TurnEngine:
             except Exception as e:
                 logger.error(f"Error in enemy turn for {enemy.name}: {e}")
                 
-    def apply_damage(self, target, damage: int) -> int:
+    def apply_damage(self, target, damage: int, particle_emitter=None, target_pos=None) -> int:
         """
         P2: Apply damage to a target and return actual damage dealt.
+        Sprint 2: Enhanced with particle effects integration.
         
         Args:
             target: Target entity (player or enemy)
             damage: Damage amount
+            particle_emitter: ParticleEmitter for visual effects
+            target_pos: Position for particle effects
             
         Returns:
             Actual damage dealt
@@ -514,16 +517,27 @@ class TurnEngine:
         target.hp = max(0, target.hp - damage)
         actual_damage = old_hp - target.hp
         
+        # Sprint 2: Trigger damage particles if available
+        if particle_emitter and target_pos and actual_damage > 0:
+            try:
+                particle_emitter.emit_damage(target_pos, actual_damage)
+                logger.debug(f"Triggered damage particles at {target_pos}")
+            except Exception as e:
+                logger.warning(f"Failed to emit damage particles: {e}")
+        
         logger.debug(f"Applied {actual_damage} damage to {getattr(target, 'name', 'target')}")
         return actual_damage
         
-    def apply_healing(self, target, heal_amount: int) -> int:
+    def apply_healing(self, target, heal_amount: int, particle_emitter=None, target_pos=None) -> int:
         """
         P2: Apply healing to a target and return actual healing done.
+        Sprint 2: Enhanced with particle effects integration.
         
         Args:
             target: Target entity (usually player)
             heal_amount: Healing amount
+            particle_emitter: ParticleEmitter for visual effects
+            target_pos: Position for particle effects
             
         Returns:
             Actual healing done
@@ -532,12 +546,65 @@ class TurnEngine:
             return 0
             
         old_hp = target.hp
-        max_hp = getattr(target, 'max_hp', target.hp)
+        max_hp = getattr(target, 'max_hp', 100)
         target.hp = min(max_hp, target.hp + heal_amount)
-        actual_heal = target.hp - old_hp
+        actual_healing = target.hp - old_hp
         
-        logger.debug(f"Applied {actual_heal} healing to {getattr(target, 'name', 'target')}")
-        return actual_heal
+        # Sprint 2: Trigger heal particles if available
+        if particle_emitter and target_pos and actual_healing > 0:
+            try:
+                particle_emitter.emit_heal(target_pos, actual_healing)
+                logger.debug(f"Triggered heal particles at {target_pos}")
+            except Exception as e:
+                logger.warning(f"Failed to emit heal particles: {e}")
+        
+        logger.debug(f"Applied {actual_healing} healing to {getattr(target, 'name', 'target')}")
+        return actual_healing
+        
+    def mini_turn_loop(self, particle_emitter=None) -> bool:
+        """
+        Sprint 2: Simplified turn execution for basic gameplay.
+        
+        Args:
+            particle_emitter: ParticleEmitter for visual effects
+            
+        Returns:
+            True if turn completed successfully, False if game ended
+        """
+        try:
+            if self.game_state == GameState.PLAYER_TURN:
+                logger.debug("Processing mini player turn")
+                # Player turn minimal logic - just check if alive
+                if self.player.hp <= 0:
+                    self.game_state = GameState.GAME_OVER
+                    return False
+                    
+            elif self.game_state == GameState.ENEMY_TURN:
+                logger.debug("Processing mini enemy turn")
+                # Simple enemy AI: attack player if possible
+                alive_enemies = [e for e in self.enemies if e.hp > 0]
+                
+                for enemy in alive_enemies:
+                    if hasattr(enemy, 'attack_power'):
+                        damage = getattr(enemy, 'attack_power', 10)
+                        # Apply damage with particles if available
+                        player_pos = (400, 300)  # Default player position
+                        actual_damage = self.apply_damage(
+                            self.player, damage, particle_emitter, player_pos
+                        )
+                        logger.debug(f"{enemy.name} attacked player for {actual_damage} damage")
+                        
+                        if self.player.hp <= 0:
+                            self.game_state = GameState.GAME_OVER
+                            return False
+                            
+            # End turn
+            self.end_turn()
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error in mini turn loop: {e}")
+            return False
         
     def end_turn(self) -> None:
         """

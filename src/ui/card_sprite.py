@@ -45,10 +45,10 @@ class CardSprite(pygame.sprite.Sprite):
         else:
             self.hover_time = 0
             
-        # Set animation targets
+        # Set animation targets with dynamic hover effects
         if self.is_hovered:
-            self.target_lift = -15
-            self.target_scale = 1.05
+            # Base values will be overridden by pulsing calculations below
+            pass
         else:
             self.target_lift = 0
             self.target_scale = 1.0
@@ -60,14 +60,26 @@ class CardSprite(pygame.sprite.Sprite):
         # Update position
         self.rect.y = int(self.base_y + self.lift)
         
-        # Pulsing outline alpha
+        # Pulsing outline alpha with enhanced intensity
         if self.is_hovered:
-            # Senoidal pulsing effect
-            pulse = (math.sin(pygame.time.get_ticks() * 0.008) + 1) * 0.5
+            # Enhanced senoidal pulsing effect - faster and more intense
+            pulse = (math.sin(pygame.time.get_ticks() * 0.012) + 1) * 0.5
             self.outline_alpha = int(pulse * 180 + 75)  # Range: 75-255
+            
+            # Dynamic lift based on pulse for extra effect
+            base_lift = -15
+            pulse_lift = int(pulse * 8)  # Extra 0-8 pixels
+            self.target_lift = base_lift - pulse_lift
+            
+            # Dynamic scale with subtle pulsing
+            base_scale = 1.05
+            pulse_scale = pulse * 0.03  # Extra 0-0.03 scale
+            self.target_scale = base_scale + pulse_scale
         else:
             # Fade out outline
             self.outline_alpha = max(self.outline_alpha - self.alpha_speed, 0)
+            self.target_lift = 0
+            self.target_scale = 1.0
             
         # Update image scale if needed
         if abs(self.hover_scale - 1.0) > 0.01:
@@ -99,18 +111,32 @@ class CardSprite(pygame.sprite.Sprite):
             self._draw_outline(surface)
             
     def _draw_outline(self, surface: pygame.Surface) -> None:
-        """Draw pulsing outline effect."""
-        # Create outline surface
-        outline_surf = pygame.Surface(self.image.get_size(), pygame.SRCALPHA)
-        outline_surf.fill((255, 255, 100, self.outline_alpha))  # Golden outline
+        """Draw pulsing outline effect with enhanced glow."""
+        if self.outline_alpha <= 0:
+            return
+            
+        # Create multiple glow layers for better effect
+        glow_size = max(4, int(self.outline_alpha / 30))
         
-        # Draw outline with offset for glow effect
-        offsets = [(-2, -2), (-2, 2), (2, -2), (2, 2), (-2, 0), (2, 0), (0, -2), (0, 2)]
-        for dx, dy in offsets:
-            outline_rect = self.rect.copy()
-            outline_rect.x += dx
-            outline_rect.y += dy
-            surface.blit(outline_surf, outline_rect, special_flags=pygame.BLEND_ALPHA_SDL2)
+        # Outer glow (larger, more transparent)
+        outer_glow = pygame.Surface((self.image.get_width() + glow_size*4, 
+                                   self.image.get_height() + glow_size*4), pygame.SRCALPHA)
+        outer_glow.fill((255, 255, 100, max(20, self.outline_alpha // 4)))
+        
+        outer_rect = self.rect.copy()
+        outer_rect.x -= glow_size*2
+        outer_rect.y -= glow_size*2
+        surface.blit(outer_glow, outer_rect, special_flags=pygame.BLEND_ALPHA_SDL2)
+        
+        # Inner glow (smaller, more intense)
+        inner_glow = pygame.Surface((self.image.get_width() + glow_size*2, 
+                                   self.image.get_height() + glow_size*2), pygame.SRCALPHA)
+        inner_glow.fill((255, 255, 150, min(255, self.outline_alpha)))
+        
+        inner_rect = self.rect.copy()
+        inner_rect.x -= glow_size
+        inner_rect.y -= glow_size
+        surface.blit(inner_glow, inner_rect, special_flags=pygame.BLEND_ALPHA_SDL2)
             
     def set_position(self, pos: Tuple[int, int]) -> None:
         """Set new base position for the card."""
