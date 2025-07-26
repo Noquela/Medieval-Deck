@@ -1,42 +1,45 @@
 """
-Demo MVP Combat - Sistema de combate básico com 2 biomas e cards simples
+MVP Combat Screen - Sistema de combate integrado ao jogo principal
 
-Demonstra:
-- 2 biomas (Cathedral, Goblin Cave)
-- 3 cartas básicas (Strike, Guard, Heal)
-- 3 inimigos (Knight, Goblin, Skeleton)
-- Sistema de turnos simples
-- Interface minimalista com assets gerados por IA
+Usa os sistemas MVP mas integrado ao fluxo normal do jogo.
 """
 
 import pygame
-import sys
-from pathlib import Path
-from typing import Optional, Dict, Any
 import logging
+from typing import Optional, Dict, Any, List
+from pathlib import Path
 
-# Add src to path
-src_path = Path(__file__).parent / "src"
-sys.path.insert(0, str(src_path))
+from ..utils.config import Config
+from ..gameplay.mvp_cards import Card, CardType, Hand
+from ..gameplay.mvp_deck import MVPDeck
+from ..core.mvp_turn_engine import MVPTurnEngine, MVPPlayer, MVPEnemy
 
-from src.utils.config import Config
-from src.gameplay.mvp_cards import Card, CardType, Hand
-from src.gameplay.mvp_deck import MVPDeck
-from src.core.mvp_turn_engine import MVPTurnEngine, MVPPlayer, MVPEnemy
-
-# Setup logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-class MVPCombatDemo:
-    """Demo de combate MVP com assets IA e interface simplificada."""
+
+class MVPCombatScreen:
+    """
+    Tela de combate MVP integrada ao jogo principal.
     
-    def __init__(self):
-        """Inicializa o demo MVP."""
-        pygame.init()
+    Usa os sistemas MVP testados mas dentro do fluxo normal do jogo.
+    """
+    
+    def __init__(self, screen: pygame.Surface, config: Config, character_id: str = "knight"):
+        """
+        Initialize MVP combat screen.
         
-        # Config and theme
-        self.config = Config()
+        Args:
+            screen: Pygame screen surface
+            config: Configuration object
+            character_id: Selected character (knight, wizard, assassin)
+        """
+        self.screen = screen
+        self.config = config
+        self.character_id = character_id
+        
+        # Screen dimensions
+        self.width = screen.get_width()
+        self.height = screen.get_height()
         
         # Theme colors and fonts
         pygame.font.init()
@@ -47,7 +50,8 @@ class MVPCombatDemo:
             "card_bg": (60, 50, 40),
             "accent": (212, 180, 106),
             "hp_red": (220, 68, 58),
-            "mana_blue": (39, 131, 221)
+            "mana_blue": (39, 131, 221),
+            "selected": (255, 215, 0)  # Golden
         }
         
         self.fonts = {
@@ -56,30 +60,21 @@ class MVPCombatDemo:
             "small": pygame.font.Font(None, 18)
         }
         
-        # Screen setup
-        self.screen_width = 1280
-        self.screen_height = 720
-        self.screen = pygame.display.set_mode((self.screen_width, self.screen_height))
-        pygame.display.set_caption("Medieval Deck - MVP Combat Demo")
-        
         # Create layout zones
         self.zones = {
-            "enemy": pygame.Rect(0, 0, self.screen_width, int(self.screen_height * 0.25)),
-            "hand": pygame.Rect(0, int(self.screen_height * 0.8), self.screen_width, int(self.screen_height * 0.2)),
-            "status_hud": pygame.Rect(self.screen_width - 280, 20, 260, 120),
-            "player": pygame.Rect(int(self.screen_width * 0.1), int(self.screen_height * 0.4), 
-                                int(self.screen_width * 0.3), int(self.screen_height * 0.4))
+            "enemy": pygame.Rect(0, 0, self.width, int(self.height * 0.25)),
+            "hand": pygame.Rect(0, int(self.height * 0.8), self.width, int(self.height * 0.2)),
+            "status_hud": pygame.Rect(self.width - 280, 20, 260, 120),
+            "player": pygame.Rect(int(self.width * 0.1), int(self.height * 0.4), 
+                                int(self.width * 0.3), int(self.height * 0.4))
         }
-        
-        # Clock
-        self.clock = pygame.time.Clock()
         
         # Game state
         self.biomes = {
             "cathedral": {
                 "name": "Sacred Cathedral",
                 "background": self._load_background("bg_cathedral"),
-                "enemy_type": "Knight"
+                "enemy_type": "Knight Guardian"
             },
             "goblin_cave": {
                 "name": "Goblin Cave",
@@ -95,38 +90,40 @@ class MVPCombatDemo:
         self.deck = MVPDeck()
         self.hand = Hand()
         
-        # Create player and enemy
-        self.player = MVPPlayer(max_hp=100, max_mana=3)
+        # Create player and enemy based on character
+        self.player = self._create_player_for_character(character_id)
         self.enemy = self._create_enemy_for_biome(self.current_biome)
         self.turn_engine = MVPTurnEngine(self.player, self.enemy)
         
-        # Start game
+        # Combat state
+        self.game_over = False
+        self.victory = False
+        
+        # Start combat
         self._start_combat()
+        
+        logger.info(f"MVP Combat Screen initialized for character: {character_id}")
+        
+    def _create_player_for_character(self, character_id: str) -> MVPPlayer:
+        """Create player based on selected character."""
+        if character_id == "wizard":
+            return MVPPlayer(max_hp=80, max_mana=4)  # More mana, less HP
+        elif character_id == "assassin":
+            return MVPPlayer(max_hp=90, max_mana=3)  # Balanced
+        else:  # knight
+            return MVPPlayer(max_hp=120, max_mana=2)  # More HP, less mana
     
-    def _start_combat(self):
-        """Inicia um combate."""
-        # Reset player and enemy
-        self.player.current_hp = self.player.max_hp
-        self.player.current_mana = self.player.max_mana
-        self.player.block = 0
-        
-        self.enemy = self._create_enemy_for_biome(self.current_biome)
-        self.turn_engine.enemy = self.enemy
-        
-        # Clear hand and draw new cards
-        self.hand.cards.clear()
-        self.deck.shuffle()
-        for _ in range(5):
-            card = self.deck.draw_card()
-            if card:
-                self.hand.add_card(card)
-        
-        logger.info(f"Combat started in {self.biomes[self.current_biome]['name']}")
-        logger.info(f"Enemy: {self.enemy.name} ({self.enemy.current_hp} HP)")
-        logger.info(f"Hand: {[f'{c.name}({c.mana_cost})' for c in self.hand.cards]}")
+    def _create_enemy_for_biome(self, biome_name: str) -> MVPEnemy:
+        """Create enemy for current biome."""
+        if biome_name == "cathedral":
+            return MVPEnemy("Knight Guardian", hp=35, attack=8, enemy_type="knight")
+        elif biome_name == "goblin_cave":
+            return MVPEnemy("Goblin Scout", hp=20, attack=6, enemy_type="goblin")
+        else:
+            return MVPEnemy("Unknown Enemy", hp=25, attack=7, enemy_type="generic")
     
     def _load_background(self, bg_name: str) -> Optional[pygame.Surface]:
-        """Carrega background gerado por IA."""
+        """Load AI-generated background."""
         try:
             # Look for generated backgrounds
             generated_dir = Path("assets/generated")
@@ -143,7 +140,7 @@ class MVPCombatDemo:
                     bg_path = bg_files[0]  # Use first match
                     logger.info(f"Loading background: {bg_path}")
                     bg_surface = pygame.image.load(bg_path)
-                    return pygame.transform.scale(bg_surface, (self.screen_width, self.screen_height))
+                    return pygame.transform.scale(bg_surface, (self.width, self.height))
             
             logger.warning(f"Background not found for {bg_name}, using fallback")
             return self._create_fallback_background()
@@ -153,48 +150,13 @@ class MVPCombatDemo:
             return self._create_fallback_background()
     
     def _create_fallback_background(self) -> pygame.Surface:
-        """Cria background de fallback."""
-        bg = pygame.Surface((self.screen_width, self.screen_height))
+        """Create fallback background."""
+        bg = pygame.Surface((self.width, self.height))
         bg.fill(self.colors["background"])
         return bg
     
-    def _create_enemy_for_biome(self, biome_name: str) -> MVPEnemy:
-        """Cria um inimigo apropriado para o bioma."""
-        if biome_name == "cathedral":
-            return MVPEnemy("Knight Guardian", hp=35, attack=8, enemy_type="knight")
-        elif biome_name == "goblin_cave":
-            return MVPEnemy("Goblin Scout", hp=20, attack=6, enemy_type="goblin")
-        else:
-            return MVPEnemy("Unknown Enemy", hp=25, attack=7, enemy_type="generic")
-    
-    def draw_text_outline(self, surface, text, pos, font, color):
-        """Desenha texto com contorno."""
-        x, y = pos
-        # Contorno
-        outline_color = (0, 0, 0)
-        for dx in [-1, 0, 1]:
-            for dy in [-1, 0, 1]:
-                if dx != 0 or dy != 0:
-                    outline_surf = font.render(text, True, outline_color)
-                    surface.blit(outline_surf, (x + dx, y + dy))
-        # Texto principal
-        text_surf = font.render(text, True, color)
-        surface.blit(text_surf, pos)
-    
-    def draw_health_bar(self, surface, rect, current, maximum):
-        """Desenha barra de vida."""
-        # Fundo
-        pygame.draw.rect(surface, (100, 50, 50), rect)
-        pygame.draw.rect(surface, self.colors["border"], rect, 2)
-        
-        # Preenchimento
-        if maximum > 0:
-            fill_width = int((current / maximum) * (rect.width - 4))
-            fill_rect = pygame.Rect(rect.x + 2, rect.y + 2, fill_width, rect.height - 4)
-            pygame.draw.rect(surface, self.colors["hp_red"], fill_rect)
-    
-    def _start_combat(self):
-        """Inicia um combate."""
+    def _start_combat(self) -> None:
+        """Start a new combat."""
         # Reset player and enemy
         self.player.current_hp = self.player.max_hp
         self.player.current_mana = self.player.max_mana
@@ -211,57 +173,58 @@ class MVPCombatDemo:
             if card:
                 self.hand.add_card(card)
         
+        self.game_over = False
+        self.victory = False
+        
         logger.info(f"Combat started in {self.biomes[self.current_biome]['name']}")
         logger.info(f"Enemy: {self.enemy.name} ({self.enemy.current_hp} HP)")
         logger.info(f"Hand: {[f'{c.name}({c.mana_cost})' for c in self.hand.cards]}")
     
-    def handle_events(self) -> bool:
-        """Processa eventos. Retorna False para sair."""
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                return False
-            
-            elif event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_ESCAPE:
-                    return False
+    def handle_event(self, event: pygame.event.Event) -> Optional[str]:
+        """Handle events. Returns action string or None."""
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_ESCAPE:
+                return "back_to_menu"
+                
+            elif event.key == pygame.K_TAB:
+                # Switch biomes
+                self.current_biome = "goblin_cave" if self.current_biome == "cathedral" else "cathedral"
+                self.enemy = self._create_enemy_for_biome(self.current_biome)
+                self.turn_engine.enemy = self.enemy
+                logger.info(f"Switched to {self.biomes[self.current_biome]['name']}")
+                
+            elif event.key == pygame.K_LEFT:
+                # Select previous card
+                if self.hand.cards:
+                    self.selected_card_index = max(0, self.selected_card_index - 1)
                     
-                elif event.key == pygame.K_TAB:
-                    # Switch biomes
-                    self.current_biome = "goblin_cave" if self.current_biome == "cathedral" else "cathedral"
-                    # Create new enemy for new biome
-                    self.enemy = self._create_enemy_for_biome(self.current_biome)
-                    self.turn_engine.enemy = self.enemy
-                    logger.info(f"Switched to {self.biomes[self.current_biome]['name']}")
+            elif event.key == pygame.K_RIGHT:
+                # Select next card
+                if self.hand.cards:
+                    self.selected_card_index = min(len(self.hand.cards) - 1, self.selected_card_index + 1)
                     
-                elif event.key == pygame.K_LEFT:
-                    # Select previous card
-                    if self.hand.cards:
-                        self.selected_card_index = max(0, self.selected_card_index - 1)
-                        
-                elif event.key == pygame.K_RIGHT:
-                    # Select next card
-                    if self.hand.cards:
-                        self.selected_card_index = min(len(self.hand.cards) - 1, self.selected_card_index + 1)
-                        
-                elif event.key == pygame.K_SPACE:
-                    # Play selected card
-                    if self.hand.cards and self.selected_card_index < len(self.hand.cards):
-                        selected_card = self.hand.cards[self.selected_card_index]
-                        self._play_card(selected_card)
-                        
-                elif event.key == pygame.K_RETURN:
-                    # End turn
+            elif event.key == pygame.K_SPACE:
+                # Play selected card
+                if not self.game_over and self.hand.cards and self.selected_card_index < len(self.hand.cards):
+                    selected_card = self.hand.cards[self.selected_card_index]
+                    self._play_card(selected_card)
+                    
+            elif event.key == pygame.K_RETURN:
+                # End turn or restart if game over
+                if self.game_over:
+                    self._start_combat()
+                else:
                     self.turn_engine.end_player_turn()
                     logger.info("Player turn ended")
                     
-                elif event.key == pygame.K_r:
-                    # Restart combat
-                    self._start_combat()
-                    
-        return True
+            elif event.key == pygame.K_r:
+                # Restart combat
+                self._start_combat()
+                
+        return None
     
-    def _play_card(self, card: Card):
-        """Joga uma carta."""
+    def _play_card(self, card: Card) -> None:
+        """Play a card."""
         try:
             result = self.turn_engine.play_card(card)
             if result:
@@ -271,14 +234,55 @@ class MVPCombatDemo:
                     self.selected_card_index = max(0, len(self.hand.cards) - 1)
                     
                 logger.info(f"Played {card.name}: {result}")
+                
+                # Check for game over conditions
+                if self.enemy.current_hp <= 0:
+                    self.game_over = True
+                    self.victory = True
+                    logger.info("Victory!")
+                elif self.player.current_hp <= 0:
+                    self.game_over = True
+                    self.victory = False
+                    logger.info("Defeat!")
             else:
                 logger.warning(f"Could not play {card.name}")
                 
         except Exception as e:
             logger.error(f"Error playing card {card.name}: {e}")
     
-    def render(self):
-        """Renderiza a tela."""
+    def draw_text_outline(self, surface, text, pos, font, color):
+        """Draw text with outline."""
+        x, y = pos
+        # Outline
+        outline_color = (0, 0, 0)
+        for dx in [-1, 0, 1]:
+            for dy in [-1, 0, 1]:
+                if dx != 0 or dy != 0:
+                    outline_surf = font.render(text, True, outline_color)
+                    surface.blit(outline_surf, (x + dx, y + dy))
+        # Main text
+        text_surf = font.render(text, True, color)
+        surface.blit(text_surf, pos)
+    
+    def draw_health_bar(self, surface, rect, current, maximum):
+        """Draw health bar."""
+        # Background
+        pygame.draw.rect(surface, (100, 50, 50), rect)
+        pygame.draw.rect(surface, self.colors["border"], rect, 2)
+        
+        # Fill
+        if maximum > 0:
+            fill_width = int((current / maximum) * (rect.width - 4))
+            fill_rect = pygame.Rect(rect.x + 2, rect.y + 2, fill_width, rect.height - 4)
+            pygame.draw.rect(surface, self.colors["hp_red"], fill_rect)
+    
+    def update(self, dt: float) -> None:
+        """Update combat screen."""
+        # Update turn engine
+        pass
+    
+    def draw(self) -> None:
+        """Draw the combat screen."""
         # Background
         current_bg = self.biomes[self.current_biome]["background"]
         if current_bg:
@@ -298,10 +302,12 @@ class MVPCombatDemo:
         # Controls help
         self._render_controls()
         
-        pygame.display.flip()
+        # Game over overlay
+        if self.game_over:
+            self._render_game_over()
     
     def _render_enemy_zone(self):
-        """Renderiza zona do inimigo."""
+        """Render enemy zone."""
         enemy_zone = self.zones["enemy"]
         
         # Enemy info
@@ -336,7 +342,7 @@ class MVPCombatDemo:
         )
     
     def _render_hand(self):
-        """Renderiza mão do jogador."""
+        """Render player hand."""
         hand_zone = self.zones["hand"]
         
         if not self.hand.cards:
@@ -366,7 +372,7 @@ class MVPCombatDemo:
             
             # Card background (different color if selected)
             if i == self.selected_card_index:
-                color = self.colors["accent"]
+                color = self.colors["selected"]
             else:
                 color = self.colors["card_bg"]
             
@@ -411,7 +417,7 @@ class MVPCombatDemo:
                 )
     
     def _render_status_hud(self):
-        """Renderiza HUD de status."""
+        """Render status HUD."""
         status_zone = self.zones["status_hud"]
         
         # Player stats
@@ -420,12 +426,22 @@ class MVPCombatDemo:
         player_mana = self.player.current_mana
         player_max_mana = self.player.max_mana
         
+        # Character info
+        char_text = f"Character: {self.character_id.title()}"
+        self.draw_text_outline(
+            self.screen,
+            char_text,
+            (status_zone.x + 10, status_zone.y + 10),
+            self.fonts["medium"],
+            self.colors["text_light"]
+        )
+        
         # HP
         hp_text = f"HP: {player_hp}/{player_max_hp}"
         self.draw_text_outline(
             self.screen,
             hp_text,
-            (status_zone.x + 10, status_zone.y + 10),
+            (status_zone.x + 10, status_zone.y + 35),
             self.fonts["medium"],
             self.colors["hp_red"]
         )
@@ -435,7 +451,7 @@ class MVPCombatDemo:
         self.draw_text_outline(
             self.screen,
             mana_text,
-            (status_zone.x + 10, status_zone.y + 40),
+            (status_zone.x + 10, status_zone.y + 60),
             self.fonts["medium"],
             self.colors["mana_blue"]
         )
@@ -445,13 +461,13 @@ class MVPCombatDemo:
         self.draw_text_outline(
             self.screen,
             biome_text,
-            (status_zone.x + 10, status_zone.y + 70),
+            (status_zone.x + 10, status_zone.y + 85),
             self.fonts["medium"],
             self.colors["text_light"]
         )
     
     def _render_controls(self):
-        """Renderiza controles de ajuda."""
+        """Render controls help."""
         controls = [
             "Controls:",
             "← → : Select card",
@@ -459,10 +475,10 @@ class MVPCombatDemo:
             "ENTER : End turn",
             "TAB : Switch biome",
             "R : Restart combat",
-            "ESC : Exit"
+            "ESC : Back to menu"
         ]
         
-        y_start = self.screen_height - len(controls) * 20 - 10
+        y_start = self.height - len(controls) * 20 - 10
         
         for i, control in enumerate(controls):
             self.draw_text_outline(
@@ -473,35 +489,56 @@ class MVPCombatDemo:
                 self.colors["text_light"]
             )
     
-    def run(self) -> bool:
-        """Executa o demo. Retorna True se sucesso."""
-        logger.info("Starting MVP Combat Demo")
-        logger.info("Generated assets loaded successfully")
+    def _render_game_over(self):
+        """Render game over overlay."""
+        # Semi-transparent overlay
+        overlay = pygame.Surface((self.width, self.height))
+        overlay.set_alpha(150)
+        overlay.fill((0, 0, 0))
+        self.screen.blit(overlay, (0, 0))
         
-        running = True
-        while running:
-            # Events
-            running = self.handle_events()
-            
-            # Render
-            self.render()
-            
-            # Timing
-            self.clock.tick(60)
+        # Game over text
+        if self.victory:
+            main_text = "VICTORY!"
+            sub_text = "You defeated the enemy!"
+            color = (0, 255, 0)
+        else:
+            main_text = "DEFEAT!"
+            sub_text = "You have been defeated!"
+            color = (255, 0, 0)
         
-        pygame.quit()
-        logger.info("MVP Combat Demo ended")
-        return True
-
-def main() -> bool:
-    """Executa o demo MVP."""
-    try:
-        demo = MVPCombatDemo()
-        return demo.run()
-    except Exception as e:
-        logger.error(f"Error in MVP Combat Demo: {e}")
-        return False
-
-if __name__ == "__main__":
-    success = main()
-    sys.exit(0 if success else 1)
+        # Main text
+        self.draw_text_outline(
+            self.screen,
+            main_text,
+            (self.width // 2, self.height // 2 - 50),
+            self.fonts["large"],
+            color
+        )
+        
+        # Sub text
+        self.draw_text_outline(
+            self.screen,
+            sub_text,
+            (self.width // 2, self.height // 2),
+            self.fonts["medium"],
+            self.colors["text_light"]
+        )
+        
+        # Restart instruction
+        restart_text = "Press ENTER to restart or ESC to return to menu"
+        self.draw_text_outline(
+            self.screen,
+            restart_text,
+            (self.width // 2, self.height // 2 + 50),
+            self.fonts["medium"],
+            self.colors["text_light"]
+        )
+    
+    def enter_screen(self) -> None:
+        """Called when screen becomes active."""
+        logger.info(f"Entering MVP Combat Screen with character: {self.character_id}")
+        
+    def exit_screen(self) -> None:
+        """Called when screen becomes inactive."""
+        logger.info("Exiting MVP Combat Screen")

@@ -193,6 +193,12 @@ Examples:
         help="Run MVP Combat demo with AI-generated backgrounds"
     )
     
+    parser.add_argument(
+        "--skip-select",
+        action="store_true",
+        help="Skip character selection and go directly to MVP Combat"
+    )
+    
     return parser
 
 
@@ -605,6 +611,9 @@ def main():
             
         if args.fullscreen:
             config.update_ui_config(fullscreen=True)
+            
+        # Store skip_select flag in config for GameUI to access
+        config.skip_select = getattr(args, 'skip_select', False)
             
         # Initialize AI pipeline
         enable_ai = not args.no_ai

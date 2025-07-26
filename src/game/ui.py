@@ -24,6 +24,7 @@ from .character_screens import CharacterScreenManager
 from .stats_screen import StatsScreen
 from .story_screen import StoryScreen
 from ..ui.combat_screen import CombatScreen
+from ..ui.mvp_combat_screen import MVPCombatScreen
 from ..enemies.intelligent_combat import IntelligentCombatEngine
 from ..core.turn_engine import Player
 from ..gameplay.deck import DeckBuilder
@@ -41,7 +42,6 @@ class UIState(Enum):
     CHARACTER_DETAIL = "character_detail"  # Nova tela individual de personagem
     GAME = "game"
     COMBAT = "combat"
-    MVP_COMBAT = "mvp_combat"  # Demo MVP Combat
     DECK_BUILDER = "deck_builder"
     STATS = "stats"
     STORY = "story"
@@ -102,8 +102,15 @@ class GameUI:
         self.deck_manager = DeckManager(self.card_manager, self.config)
         
         # UI state
-        self.current_state = UIState.MENU  # Voltar para o menu original
+        self.current_state = UIState.MENU
         self.running = True
+        
+        # Check if should skip directly to character selection (if needed)
+        if hasattr(config, 'skip_select') and config.skip_select:
+            logger.info("Skip select enabled, going directly to character selection")
+            self.current_state = UIState.CLEAN_CHARACTER_SELECTION
+        else:
+            self.current_state = UIState.MENU
         
         # Screens
         self.screens: Dict[UIState, Any] = {}
@@ -189,8 +196,14 @@ class GameUI:
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_F11:
                     self._toggle_fullscreen()
-                elif event.key == pygame.K_ESCAPE and self.current_state == UIState.MENU:
-                    self.running = False
+                elif event.key == pygame.K_ESCAPE:
+                    # ESC sempre volta ao menu principal (exceto se já estiver no menu)
+                    if self.current_state != UIState.MENU:
+                        logger.info(f"ESC pressed, returning to menu from {self.current_state.value}")
+                        self._transition_to_state(UIState.MENU)
+                    else:
+                        # Se estiver no menu, ESC sai do jogo
+                        self.running = False
                     
             # Pass event to current screen
             if self.current_state == UIState.CHARACTER_DETAIL:
@@ -222,19 +235,17 @@ class GameUI:
             
         if action == "new_game":
             self._start_new_game()
-        elif action == "mvp_combat":
-            self._start_mvp_combat()
-        elif action == "combat_test":
-            self._start_combat_test()
         elif action == "deck_builder":
             self._open_deck_builder()
         elif action == "settings":
             self._open_settings()
         elif action == "quit_game":
+            logger.info("Quit game requested")
             self.running = False
         elif action == "back_to_menu":
             self._transition_to_state(UIState.MENU)
         elif action == "confirm_selection":
+            # Character selected from CHARACTER_SELECTION - start combat with that character
             self._confirm_character_selection()
         elif action == "back":
             self._transition_to_state(UIState.MENU)
@@ -268,12 +279,9 @@ class GameUI:
         """
         logger.info(f"Personagem cinematográfico selecionado: {character_id}")
         
-        # Inicializar tela de combate se ainda não foi criada
-        if self.screens[UIState.COMBAT] is None:
-            logger.info("Combat screen not initialized, creating now...")
-            self._initialize_combat_screen(character_id)
-        else:
-            logger.info("Combat screen already exists")
+        # Sempre reinicializar a tela de combate com o novo personagem
+        logger.info("Initializing combat screen with new character...")
+        self._initialize_combat_screen(character_id)
         
         # Verificar se foi criada com sucesso
         if self.screens[UIState.COMBAT] is not None:
@@ -287,37 +295,29 @@ class GameUI:
     
     def _initialize_combat_screen(self, character_id: str) -> None:
         """
-        Inicializa a tela de combate com o personagem selecionado.
+        Initialize combat screen with selected character using MVP system.
         
         Args:
             character_id: ID do personagem (knight, wizard, assassin)
         """
         try:
-            logger.info(f"Initializing combat screen for character: {character_id}")
+            logger.info(f"Initializing MVP combat screen for character: {character_id}")
             
-            # Criar player baseado no personagem selecionado
-            player = Player(max_hp=30, max_mana=10)
-            logger.info(f"Player created: HP={player.hp}/{player.max_hp}, Mana={player.mana}/{player.max_mana}")
-            
-            # Inicializar combat engine com player
-            combat_engine = IntelligentCombatEngine(
-                player=player,
-                encounter_type="goblin_patrol"
-            )
-            logger.info(f"Combat engine created with encounter: goblin_patrol")
-            
-            # Criar a tela de combate
-            self.screens[UIState.COMBAT] = CombatScreen(
-                self.screen,
-                combat_engine,
-                self.asset_generator
+            # Create MVP Combat Screen with selected character
+            mvp_combat_screen = MVPCombatScreen(
+                screen=self.screen,
+                config=self.config,
+                character_id=character_id
             )
             
-            logger.info(f"Combat screen initialized successfully for character: {character_id}")
+            # Store the screen
+            self.screens[UIState.COMBAT] = mvp_combat_screen
+            
+            logger.info(f"MVP Combat screen initialized successfully for character: {character_id}")
             
         except Exception as e:
-            logger.error(f"Failed to initialize combat screen: {e}", exc_info=True)
-            # Fallback para o menu
+            logger.error(f"Failed to initialize MVP combat screen: {e}", exc_info=True)
+            # Fallback to menu
             self._transition_to_state(UIState.MENU)
             
     def _show_character_detail(self, character_type: str) -> None:
@@ -356,53 +356,7 @@ class GameUI:
     def _start_new_game(self) -> None:
         """Start a new game - go to character selection."""
         logger.info("Starting new game...")
-        self._transition_to_state(UIState.CHARACTER_SELECTION)  # Use the original character selection with backgrounds
-        
-    def _start_mvp_combat(self) -> None:
-        """Start MVP Combat demo."""
-        logger.info("Starting MVP Combat demo...")
-        try:
-            # Import MVP Combat Demo
-            import sys
-            from pathlib import Path
-            
-            # Add project root to path
-            project_root = Path(__file__).parent.parent.parent
-            if str(project_root) not in sys.path:
-                sys.path.insert(0, str(project_root))
-            
-            from demo_mvp_combat import MVPCombatDemo
-            
-            # Create MVP Combat demo instance
-            # Pass our existing screen to reuse it
-            self.mvp_combat_demo = MVPCombatDemo()
-            # Override the demo's screen with our main screen
-            self.mvp_combat_demo.screen = self.screen
-            self.mvp_combat_demo.screen_width = self.screen.get_width()
-            self.mvp_combat_demo.screen_height = self.screen.get_height()
-            
-            # Update zones for our screen size
-            self.mvp_combat_demo.zones = {
-                "enemy": pygame.Rect(0, 0, self.mvp_combat_demo.screen_width, int(self.mvp_combat_demo.screen_height * 0.25)),
-                "hand": pygame.Rect(0, int(self.mvp_combat_demo.screen_height * 0.8), self.mvp_combat_demo.screen_width, int(self.mvp_combat_demo.screen_height * 0.2)),
-                "status_hud": pygame.Rect(self.mvp_combat_demo.screen_width - 280, 20, 260, 120),
-                "player": pygame.Rect(int(self.mvp_combat_demo.screen_width * 0.1), int(self.mvp_combat_demo.screen_height * 0.4), 
-                                    int(self.mvp_combat_demo.screen_width * 0.3), int(self.mvp_combat_demo.screen_height * 0.4))
-            }
-            
-            logger.info("MVP Combat demo initialized successfully")
-            self._transition_to_state(UIState.MVP_COMBAT)
-            
-        except Exception as e:
-            logger.error(f"Failed to start MVP Combat demo: {e}")
-            logger.error("Falling back to menu")
-            self._transition_to_state(UIState.MENU)
-        
-    def _start_combat_test(self) -> None:
-        """Start combat test directly with default character."""
-        logger.info("Starting combat test...")
-        # Use default knight character for testing
-        self._select_cinematic_character("knight")
+        self._transition_to_state(UIState.CHARACTER_SELECTION)  # Use the original character selection with beautiful backgrounds
         
     def _confirm_character_selection(self) -> None:
         """Confirm character selection and start game."""
@@ -411,8 +365,17 @@ class GameUI:
             selected_char = char_screen.get_selected_character()
             if selected_char:
                 logger.info(f"Character selected: {selected_char}")
-                # Iniciar combate com personagem selecionado
-                self._select_cinematic_character(selected_char)
+                # Initialize combat with selected character
+                self._initialize_combat_screen(selected_char)
+                if self.screens[UIState.COMBAT]:
+                    self._transition_to_state(UIState.COMBAT)
+                else:
+                    logger.error("Failed to initialize combat screen")
+                    self._transition_to_state(UIState.MENU)
+            else:
+                logger.warning("No character selected")
+        else:
+            logger.error("Not in character selection state")
                 
     def _confirm_clean_character_selection(self) -> None:
         """Confirm character selection from clean screen and start game."""
@@ -421,9 +384,17 @@ class GameUI:
             selected_char = char_screen.get_selected_character()
             if selected_char:
                 logger.info(f"Character selected from clean screen: {selected_char}")
-                # Iniciar combate com personagem selecionado
-                self._select_cinematic_character(selected_char)
-        
+                # Initialize combat with selected character
+                self._initialize_combat_screen(selected_char)
+                if self.screens[UIState.COMBAT]:
+                    self._transition_to_state(UIState.COMBAT)
+                else:
+                    logger.error("Failed to initialize combat screen")
+                    self._transition_to_state(UIState.MENU)
+            else:
+                logger.warning("No character selected")
+        else:
+            logger.error("Not in clean character selection state")
     def _open_deck_builder(self) -> None:
         """Open deck builder."""
         logger.info("Opening deck builder...")
@@ -502,12 +473,6 @@ class GameUI:
             current_screen = self.screens.get(self.current_state)
             if current_screen and hasattr(current_screen, 'update'):
                 current_screen.update(dt)
-        elif self.current_state == UIState.MVP_COMBAT:
-            # Update MVP combat
-            if hasattr(self, 'mvp_combat_demo') and self.mvp_combat_demo:
-                if not self.mvp_combat_demo.handle_events():
-                    # MVP Combat quer sair, voltar ao menu
-                    self._transition_to_state(UIState.MENU)
             
     def draw(self) -> None:
         """Draw current screen."""
@@ -525,10 +490,6 @@ class GameUI:
             current_screen = self.screens.get(self.current_state)
             if current_screen and hasattr(current_screen, 'draw'):
                 current_screen.draw()
-            elif self.current_state == UIState.MVP_COMBAT:
-                # Draw MVP combat
-                if hasattr(self, 'mvp_combat_demo') and self.mvp_combat_demo:
-                    self.mvp_combat_demo.render()
             else:
                 # Fallback: draw placeholder
                 self._draw_placeholder()
